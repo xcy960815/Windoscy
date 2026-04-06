@@ -21,6 +21,7 @@ class Win32App {
   static constexpr UINT kTrayIconId = 1;
   static constexpr int kToggleHotKeyId = 1;
   static constexpr UINT kTrayMessage = WM_APP + 1;
+  static constexpr UINT kMenuSettings = 1000;
   static constexpr UINT kMenuShowHistory = 1001;
   static constexpr UINT kMenuPauseCapture = 1002;
   static constexpr UINT kMenuIgnoreNextCopy = 1003;
@@ -70,6 +71,10 @@ class Win32App {
   bool SetupTrayIcon();
   void RemoveTrayIcon();
   void ShowTrayMenu();
+  void OpenSettingsWindow();
+  void CloseSettingsWindow();
+  bool ApplySettingsWindowChanges();
+  void SyncSettingsWindowControls();
 
   void LoadSettings();
   void PersistSettings();
@@ -109,12 +114,14 @@ class Win32App {
   LRESULT HandleListBoxMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   LRESULT HandleSearchEditMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   LRESULT HandlePinEditorMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+  LRESULT HandleSettingsWindowMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
   static LRESULT CALLBACK StaticControllerWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticPopupWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticListBoxWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticSearchEditProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticPinEditorWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+  static LRESULT CALLBACK StaticSettingsWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
   static Win32App* FromWindowUserData(HWND window);
 
@@ -126,6 +133,29 @@ class Win32App {
   HWND preview_edit_ = nullptr;
   HWND pin_editor_window_ = nullptr;
   HWND pin_editor_edit_ = nullptr;
+  HWND settings_window_ = nullptr;
+  HWND settings_capture_enabled_check_ = nullptr;
+  HWND settings_auto_paste_check_ = nullptr;
+  HWND settings_plain_text_check_ = nullptr;
+  HWND settings_start_on_login_check_ = nullptr;
+  HWND settings_show_search_check_ = nullptr;
+  HWND settings_show_preview_check_ = nullptr;
+  HWND settings_remember_position_check_ = nullptr;
+  HWND settings_show_startup_guide_check_ = nullptr;
+  HWND settings_ignore_all_check_ = nullptr;
+  HWND settings_capture_text_check_ = nullptr;
+  HWND settings_capture_html_check_ = nullptr;
+  HWND settings_capture_rtf_check_ = nullptr;
+  HWND settings_capture_images_check_ = nullptr;
+  HWND settings_capture_files_check_ = nullptr;
+  HWND settings_search_mode_combo_ = nullptr;
+  HWND settings_sort_order_combo_ = nullptr;
+  HWND settings_pin_position_combo_ = nullptr;
+  HWND settings_history_limit_combo_ = nullptr;
+  HWND settings_ignored_apps_edit_ = nullptr;
+  HWND settings_allowed_apps_edit_ = nullptr;
+  HWND settings_ignored_patterns_edit_ = nullptr;
+  HWND settings_ignored_formats_edit_ = nullptr;
   HANDLE single_instance_mutex_ = nullptr;
   WNDPROC original_search_edit_proc_ = nullptr;
   WNDPROC original_list_box_proc_ = nullptr;

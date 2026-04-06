@@ -34,9 +34,15 @@ namespace {
 constexpr wchar_t kControllerWindowClass[] = L"MaccyWindowsController";
 constexpr wchar_t kPopupWindowClass[] = L"MaccyWindowsPopup";
 constexpr wchar_t kPinEditorWindowClass[] = L"MaccyWindowsPinEditor";
+constexpr wchar_t kSettingsWindowClass[] = L"MaccyWindowsSettings";
 constexpr wchar_t kWindowTitle[] = L"Maccy Windows";
 constexpr wchar_t kSingleInstanceMutexName[] = L"Local\\MaccyWindowsSingleInstance";
 constexpr UINT kActivateExistingInstanceMessage = WM_APP + 2;
+constexpr int kSettingsClientWidth = 920;
+constexpr int kSettingsClientHeight = 690;
+constexpr int kSettingsSaveButtonId = 2101;
+constexpr int kSettingsApplyButtonId = 2102;
+constexpr int kSettingsCloseButtonId = 2103;
 
 void ShowDialog(HWND owner, std::wstring_view message, UINT flags) {
   const std::wstring text(message);
@@ -281,6 +287,165 @@ std::size_t HistoryLimitFromMenuCommand(UINT command) {
   }
 }
 
+void SetCheckboxChecked(HWND window, bool checked) {
+  if (window != nullptr) {
+    SendMessageW(window, BM_SETCHECK, checked ? BST_CHECKED : BST_UNCHECKED, 0);
+  }
+}
+
+bool IsCheckboxChecked(HWND window) {
+  return window != nullptr && SendMessageW(window, BM_GETCHECK, 0, 0) == BST_CHECKED;
+}
+
+void AddComboItem(HWND combo, const wchar_t* text) {
+  if (combo != nullptr) {
+    SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(text));
+  }
+}
+
+void SetComboSelection(HWND combo, int index) {
+  if (combo != nullptr) {
+    SendMessageW(combo, CB_SETCURSEL, static_cast<WPARAM>(index), 0);
+  }
+}
+
+int GetComboSelection(HWND combo, int fallback_index) {
+  if (combo == nullptr) {
+    return fallback_index;
+  }
+
+  const LRESULT selection = SendMessageW(combo, CB_GETCURSEL, 0, 0);
+  return selection == CB_ERR ? fallback_index : static_cast<int>(selection);
+}
+
+int SearchModeComboIndex(SearchMode mode) {
+  switch (mode) {
+    case SearchMode::kExact:
+      return 1;
+    case SearchMode::kFuzzy:
+      return 2;
+    case SearchMode::kRegexp:
+      return 3;
+    case SearchMode::kMixed:
+    default:
+      return 0;
+  }
+}
+
+SearchMode SearchModeFromComboSelection(HWND combo) {
+  switch (GetComboSelection(combo, 0)) {
+    case 1:
+      return SearchMode::kExact;
+    case 2:
+      return SearchMode::kFuzzy;
+    case 3:
+      return SearchMode::kRegexp;
+    case 0:
+    default:
+      return SearchMode::kMixed;
+  }
+}
+
+int SortOrderComboIndex(HistorySortOrder order) {
+  switch (order) {
+    case HistorySortOrder::kFirstCopied:
+      return 1;
+    case HistorySortOrder::kCopyCount:
+      return 2;
+    case HistorySortOrder::kLastCopied:
+    default:
+      return 0;
+  }
+}
+
+HistorySortOrder SortOrderFromComboSelection(HWND combo) {
+  switch (GetComboSelection(combo, 0)) {
+    case 1:
+      return HistorySortOrder::kFirstCopied;
+    case 2:
+      return HistorySortOrder::kCopyCount;
+    case 0:
+    default:
+      return HistorySortOrder::kLastCopied;
+  }
+}
+
+int PinPositionComboIndex(PinPosition position) {
+  return position == PinPosition::kBottom ? 1 : 0;
+}
+
+PinPosition PinPositionFromComboSelection(HWND combo) {
+  return GetComboSelection(combo, 0) == 1 ? PinPosition::kBottom : PinPosition::kTop;
+}
+
+int HistoryLimitComboIndex(std::size_t limit) {
+  switch (limit) {
+    case 50:
+      return 0;
+    case 100:
+      return 1;
+    case 500:
+      return 3;
+    case 200:
+    default:
+      return 2;
+  }
+}
+
+std::size_t HistoryLimitFromComboSelection(HWND combo) {
+  switch (GetComboSelection(combo, 2)) {
+    case 0:
+      return 50;
+    case 1:
+      return 100;
+    case 3:
+      return 500;
+    case 2:
+    default:
+      return 200;
+  }
+}
+
+std::wstring JoinMultilineText(const std::vector<std::string>& lines) {
+  std::wstring joined;
+
+  for (const auto& line : lines) {
+    if (!joined.empty()) {
+      joined += L"\r\n";
+    }
+    joined += win32::Utf8ToWide(line);
+  }
+
+  return joined;
+}
+
+std::vector<std::string> SplitMultilineText(const std::wstring& text) {
+  std::vector<std::string> lines;
+  std::wstring current;
+
+  const auto flush_line = [&]() {
+    while (!current.empty() && current.back() == L'\r') {
+      current.pop_back();
+    }
+
+    if (!current.empty()) {
+      lines.push_back(win32::WideToUtf8(current));
+      current.clear();
+    }
+  };
+
+  for (wchar_t ch : text) {
+    if (ch == L'\n') {
+      flush_line();
+    } else {
+      current.push_back(ch);
+    }
+  }
+
+  flush_line();
+  return lines;
+}
+
 std::wstring ReadWindowText(HWND window) {
   if (window == nullptr) {
     return {};
@@ -489,6 +654,19 @@ bool Win32App::RegisterWindowClasses() {
     return false;
   }
 
+  WNDCLASSEXW settings_class{};
+  settings_class.cbSize = sizeof(settings_class);
+  settings_class.lpfnWndProc = StaticSettingsWindowProc;
+  settings_class.hInstance = instance_;
+  settings_class.lpszClassName = kSettingsWindowClass;
+  settings_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+  settings_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+  settings_class.hIcon = large_icon;
+  settings_class.hIconSm = small_icon;
+  if (RegisterClassExW(&settings_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+    return false;
+  }
+
   return true;
 }
 
@@ -561,6 +739,8 @@ void Win32App::RemoveTrayIcon() {
 }
 
 void Win32App::ShowTrayMenu() {
+  bool settings_changed = false;
+
   HMENU menu = CreatePopupMenu();
   if (menu == nullptr) {
     return;
@@ -574,6 +754,8 @@ void Win32App::ShowTrayMenu() {
   HMENU appearance_menu = CreatePopupMenu();
   HMENU capture_menu = CreatePopupMenu();
 
+  AppendMenuW(menu, MF_STRING, kMenuSettings, L"Settings...");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kMenuShowHistory, L"Show History");
   AppendMenuW(menu, MF_STRING | (capture_enabled_ ? MF_UNCHECKED : MF_CHECKED), kMenuPauseCapture, L"Pause Capture");
   AppendMenuW(menu, MF_STRING, kMenuIgnoreNextCopy, L"Ignore Next Copy");
@@ -740,6 +922,9 @@ void Win32App::ShowTrayMenu() {
   PostMessageW(controller_window_, WM_NULL, 0, 0);
 
   switch (command) {
+    case kMenuSettings:
+      OpenSettingsWindow();
+      break;
     case kMenuShowHistory:
       TogglePopup();
       break;
@@ -747,6 +932,7 @@ void Win32App::ShowTrayMenu() {
       capture_enabled_ = !capture_enabled_;
       PersistSettings();
       UpdateTrayIcon();
+      settings_changed = true;
       break;
     case kMenuIgnoreNextCopy:
       ignore_next_external_copy_ = true;
@@ -760,22 +946,26 @@ void Win32App::ShowTrayMenu() {
     case kMenuToggleAutoPaste:
       settings_.auto_paste = !settings_.auto_paste;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuTogglePlainTextPaste:
       settings_.paste_plain_text = !settings_.paste_plain_text;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuTogglePreview:
       settings_.popup.show_preview = !settings_.popup.show_preview;
       PersistSettings();
       SyncPopupLayout();
       UpdatePreview();
+      settings_changed = true;
       break;
     case kMenuStartOnLogin: {
       const bool next = !settings_.start_on_login;
       if (win32::SetStartOnLogin(next)) {
         settings_.start_on_login = next;
         PersistSettings();
+        settings_changed = true;
       }
       break;
     }
@@ -783,6 +973,7 @@ void Win32App::ShowTrayMenu() {
       settings_.popup.show_search = !settings_.popup.show_search;
       PersistSettings();
       SyncPopupLayout();
+      settings_changed = true;
       break;
     case kMenuToggleRememberPosition:
       settings_.popup.remember_last_position = !settings_.popup.remember_last_position;
@@ -790,30 +981,37 @@ void Win32App::ShowTrayMenu() {
         settings_.popup.has_last_position = false;
       }
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuToggleIgnoreAll:
       settings_.ignore.ignore_all = !settings_.ignore.ignore_all;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuToggleCaptureText:
       settings_.ignore.capture_text = !settings_.ignore.capture_text;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuToggleCaptureHtml:
       settings_.ignore.capture_html = !settings_.ignore.capture_html;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuToggleCaptureRtf:
       settings_.ignore.capture_rtf = !settings_.ignore.capture_rtf;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuToggleCaptureImages:
       settings_.ignore.capture_images = !settings_.ignore.capture_images;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuToggleCaptureFiles:
       settings_.ignore.capture_files = !settings_.ignore.capture_files;
       PersistSettings();
+      settings_changed = true;
       break;
     case kMenuSearchModeExact:
     case kMenuSearchModeFuzzy:
@@ -825,6 +1023,7 @@ void Win32App::ShowTrayMenu() {
       if (list_box_ != nullptr) {
         InvalidateRect(list_box_, nullptr, TRUE);
       }
+      settings_changed = true;
       break;
     case kMenuSortLastCopied:
     case kMenuSortFirstCopied:
@@ -834,6 +1033,7 @@ void Win32App::ShowTrayMenu() {
       PersistSettings();
       RefreshPopupList();
       UpdateTrayIcon();
+      settings_changed = true;
       break;
     case kMenuPinTop:
     case kMenuPinBottom:
@@ -842,6 +1042,7 @@ void Win32App::ShowTrayMenu() {
       PersistSettings();
       RefreshPopupList();
       UpdateTrayIcon();
+      settings_changed = true;
       break;
     case kMenuHistoryLimit50:
     case kMenuHistoryLimit100:
@@ -853,12 +1054,158 @@ void Win32App::ShowTrayMenu() {
       PersistHistory();
       RefreshPopupList();
       UpdateTrayIcon();
+      settings_changed = true;
       break;
     case kMenuExit:
       ExitApplication();
       break;
     default:
       break;
+  }
+
+  if (settings_changed) {
+    SyncSettingsWindowControls();
+  }
+}
+
+void Win32App::OpenSettingsWindow() {
+  if (settings_window_ != nullptr && IsWindow(settings_window_) != FALSE) {
+    ShowWindow(settings_window_, IsIconic(settings_window_) != FALSE ? SW_RESTORE : SW_SHOWNORMAL);
+    SetForegroundWindow(settings_window_);
+    return;
+  }
+
+  constexpr DWORD window_style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
+  constexpr DWORD window_ex_style = WS_EX_TOOLWINDOW | WS_EX_CONTROLPARENT;
+
+  RECT window_rect{0, 0, kSettingsClientWidth, kSettingsClientHeight};
+  AdjustWindowRectEx(&window_rect, window_style, FALSE, window_ex_style);
+
+  settings_window_ = CreateWindowExW(
+      window_ex_style,
+      kSettingsWindowClass,
+      L"Maccy Windows Settings",
+      window_style,
+      CW_USEDEFAULT,
+      CW_USEDEFAULT,
+      static_cast<int>(window_rect.right - window_rect.left),
+      static_cast<int>(window_rect.bottom - window_rect.top),
+      controller_window_,
+      nullptr,
+      instance_,
+      this);
+  if (settings_window_ == nullptr) {
+    return;
+  }
+
+  SyncSettingsWindowControls();
+  ShowWindow(settings_window_, SW_SHOWNORMAL);
+  SetForegroundWindow(settings_window_);
+}
+
+void Win32App::CloseSettingsWindow() {
+  if (settings_window_ != nullptr && IsWindow(settings_window_) != FALSE) {
+    DestroyWindow(settings_window_);
+  }
+}
+
+bool Win32App::ApplySettingsWindowChanges() {
+  if (settings_window_ == nullptr || IsWindow(settings_window_) == FALSE) {
+    return false;
+  }
+
+  AppSettings next_settings = settings_;
+  const bool next_capture_enabled = IsCheckboxChecked(settings_capture_enabled_check_);
+
+  next_settings.auto_paste = IsCheckboxChecked(settings_auto_paste_check_);
+  next_settings.paste_plain_text = IsCheckboxChecked(settings_plain_text_check_);
+  next_settings.start_on_login = IsCheckboxChecked(settings_start_on_login_check_);
+  next_settings.show_startup_guide = IsCheckboxChecked(settings_show_startup_guide_check_);
+  next_settings.popup.show_search = IsCheckboxChecked(settings_show_search_check_);
+  next_settings.popup.show_preview = IsCheckboxChecked(settings_show_preview_check_);
+  next_settings.popup.remember_last_position = IsCheckboxChecked(settings_remember_position_check_);
+  if (!next_settings.popup.remember_last_position) {
+    next_settings.popup.has_last_position = false;
+  }
+
+  next_settings.search_mode = SearchModeFromComboSelection(settings_search_mode_combo_);
+  next_settings.sort_order = SortOrderFromComboSelection(settings_sort_order_combo_);
+  next_settings.pin_position = PinPositionFromComboSelection(settings_pin_position_combo_);
+  next_settings.max_history_items = HistoryLimitFromComboSelection(settings_history_limit_combo_);
+
+  next_settings.ignore.ignore_all = IsCheckboxChecked(settings_ignore_all_check_);
+  next_settings.ignore.capture_text = IsCheckboxChecked(settings_capture_text_check_);
+  next_settings.ignore.capture_html = IsCheckboxChecked(settings_capture_html_check_);
+  next_settings.ignore.capture_rtf = IsCheckboxChecked(settings_capture_rtf_check_);
+  next_settings.ignore.capture_images = IsCheckboxChecked(settings_capture_images_check_);
+  next_settings.ignore.capture_files = IsCheckboxChecked(settings_capture_files_check_);
+  next_settings.ignore.ignored_applications = SplitMultilineText(ReadWindowText(settings_ignored_apps_edit_));
+  next_settings.ignore.allowed_applications = SplitMultilineText(ReadWindowText(settings_allowed_apps_edit_));
+  next_settings.ignore.ignored_patterns = SplitMultilineText(ReadWindowText(settings_ignored_patterns_edit_));
+  next_settings.ignore.ignored_formats = SplitMultilineText(ReadWindowText(settings_ignored_formats_edit_));
+
+  if (next_settings.start_on_login != settings_.start_on_login && !win32::SetStartOnLogin(next_settings.start_on_login)) {
+    ShowDialog(
+        settings_window_,
+        L"Couldn't update the Start on Login setting. Check your Windows startup permissions and try again.",
+        MB_ICONERROR);
+    return false;
+  }
+
+  settings_ = std::move(next_settings);
+  capture_enabled_ = next_capture_enabled;
+  ApplyStoreOptions();
+  PersistSettings();
+  PersistHistory();
+  RefreshPopupList();
+  SyncPopupLayout();
+  UpdatePreview();
+  UpdateTrayIcon();
+  SyncSettingsWindowControls();
+  return true;
+}
+
+void Win32App::SyncSettingsWindowControls() {
+  if (settings_window_ == nullptr || IsWindow(settings_window_) == FALSE) {
+    return;
+  }
+
+  SetCheckboxChecked(settings_capture_enabled_check_, capture_enabled_);
+  SetCheckboxChecked(settings_auto_paste_check_, settings_.auto_paste);
+  SetCheckboxChecked(settings_plain_text_check_, settings_.paste_plain_text);
+  SetCheckboxChecked(settings_start_on_login_check_, settings_.start_on_login);
+  SetCheckboxChecked(settings_show_search_check_, settings_.popup.show_search);
+  SetCheckboxChecked(settings_show_preview_check_, settings_.popup.show_preview);
+  SetCheckboxChecked(settings_remember_position_check_, settings_.popup.remember_last_position);
+  SetCheckboxChecked(settings_show_startup_guide_check_, settings_.show_startup_guide);
+  SetCheckboxChecked(settings_ignore_all_check_, settings_.ignore.ignore_all);
+  SetCheckboxChecked(settings_capture_text_check_, settings_.ignore.capture_text);
+  SetCheckboxChecked(settings_capture_html_check_, settings_.ignore.capture_html);
+  SetCheckboxChecked(settings_capture_rtf_check_, settings_.ignore.capture_rtf);
+  SetCheckboxChecked(settings_capture_images_check_, settings_.ignore.capture_images);
+  SetCheckboxChecked(settings_capture_files_check_, settings_.ignore.capture_files);
+
+  SetComboSelection(settings_search_mode_combo_, SearchModeComboIndex(settings_.search_mode));
+  SetComboSelection(settings_sort_order_combo_, SortOrderComboIndex(settings_.sort_order));
+  SetComboSelection(settings_pin_position_combo_, PinPositionComboIndex(settings_.pin_position));
+  SetComboSelection(settings_history_limit_combo_, HistoryLimitComboIndex(settings_.max_history_items));
+
+  const std::wstring ignored_apps = JoinMultilineText(settings_.ignore.ignored_applications);
+  const std::wstring allowed_apps = JoinMultilineText(settings_.ignore.allowed_applications);
+  const std::wstring ignored_patterns = JoinMultilineText(settings_.ignore.ignored_patterns);
+  const std::wstring ignored_formats = JoinMultilineText(settings_.ignore.ignored_formats);
+
+  if (settings_ignored_apps_edit_ != nullptr) {
+    SetWindowTextW(settings_ignored_apps_edit_, ignored_apps.c_str());
+  }
+  if (settings_allowed_apps_edit_ != nullptr) {
+    SetWindowTextW(settings_allowed_apps_edit_, allowed_apps.c_str());
+  }
+  if (settings_ignored_patterns_edit_ != nullptr) {
+    SetWindowTextW(settings_ignored_patterns_edit_, ignored_patterns.c_str());
+  }
+  if (settings_ignored_formats_edit_ != nullptr) {
+    SetWindowTextW(settings_ignored_formats_edit_, ignored_formats.c_str());
   }
 }
 
@@ -1912,6 +2259,369 @@ LRESULT Win32App::HandlePinEditorMessage(HWND window, UINT message, WPARAM wpara
   return DefWindowProcW(window, message, wparam, lparam);
 }
 
+LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  (void)lparam;
+
+  switch (message) {
+    case WM_CREATE: {
+      settings_window_ = window;
+
+      const HFONT default_font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+      const auto apply_font = [default_font](HWND control) {
+        if (control != nullptr) {
+          SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(default_font), TRUE);
+        }
+      };
+
+      const auto create_group = [&](int x, int y, int width, int height, const wchar_t* title) {
+        HWND control = CreateWindowExW(
+            0,
+            L"BUTTON",
+            title,
+            WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+            x,
+            y,
+            width,
+            height,
+            window,
+            nullptr,
+            instance_,
+            nullptr);
+        apply_font(control);
+        return control;
+      };
+
+      const auto create_label = [&](int x, int y, int width, int height, const wchar_t* text) {
+        HWND control = CreateWindowExW(
+            0,
+            L"STATIC",
+            text,
+            WS_CHILD | WS_VISIBLE,
+            x,
+            y,
+            width,
+            height,
+            window,
+            nullptr,
+            instance_,
+            nullptr);
+        apply_font(control);
+        return control;
+      };
+
+      const auto create_checkbox = [&](HWND& target, int x, int y, int width, const wchar_t* text) {
+        target = CreateWindowExW(
+            0,
+            L"BUTTON",
+            text,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+            x,
+            y,
+            width,
+            22,
+            window,
+            nullptr,
+            instance_,
+            nullptr);
+        apply_font(target);
+      };
+
+      const auto create_combo = [&](HWND& target, int x, int y, int width) {
+        target = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            L"COMBOBOX",
+            nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+            x,
+            y,
+            width,
+            240,
+            window,
+            nullptr,
+            instance_,
+            nullptr);
+        apply_font(target);
+      };
+
+      const auto create_multiline_edit = [&](HWND& target, int x, int y, int width, int height) {
+        target = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            L"EDIT",
+            nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOVSCROLL | ES_MULTILINE | ES_WANTRETURN | WS_VSCROLL,
+            x,
+            y,
+            width,
+            height,
+            window,
+            nullptr,
+            instance_,
+            nullptr);
+        apply_font(target);
+      };
+
+      const int padding = 12;
+      const int section_gap = 12;
+      const int left_x = padding;
+      const int left_width = 320;
+      const int right_x = left_x + left_width + section_gap;
+      const int right_width = kSettingsClientWidth - right_x - padding;
+
+      const int general_y = 12;
+      const int general_height = 228;
+      const int search_y = general_y + general_height + section_gap;
+      const int search_height = 176;
+      const int capture_y = search_y + search_height + section_gap;
+      const int capture_height = 206;
+
+      const int button_width = 100;
+      const int button_height = 28;
+      const int button_y = kSettingsClientHeight - padding - button_height;
+      const int close_x = kSettingsClientWidth - padding - button_width;
+      const int apply_x = close_x - 8 - button_width;
+      const int save_x = apply_x - 8 - button_width;
+
+      const int content_x = left_x + 12;
+      const int content_width = left_width - 24;
+      int checkbox_y = general_y + 24;
+
+      create_group(left_x, general_y, left_width, general_height, L"General");
+      create_checkbox(settings_capture_enabled_check_, content_x, checkbox_y, content_width, L"Enable clipboard capture");
+      checkbox_y += 24;
+      create_checkbox(settings_auto_paste_check_, content_x, checkbox_y, content_width, L"Auto paste after selection");
+      checkbox_y += 24;
+      create_checkbox(settings_plain_text_check_, content_x, checkbox_y, content_width, L"Paste as plain text");
+      checkbox_y += 24;
+      create_checkbox(settings_start_on_login_check_, content_x, checkbox_y, content_width, L"Start on login");
+      checkbox_y += 24;
+      create_checkbox(settings_show_search_check_, content_x, checkbox_y, content_width, L"Show search field");
+      checkbox_y += 24;
+      create_checkbox(settings_show_preview_check_, content_x, checkbox_y, content_width, L"Show preview pane");
+      checkbox_y += 24;
+      create_checkbox(settings_remember_position_check_, content_x, checkbox_y, content_width, L"Remember popup position");
+      checkbox_y += 24;
+      create_checkbox(settings_show_startup_guide_check_, content_x, checkbox_y, content_width, L"Show startup guide");
+
+      create_group(left_x, search_y, left_width, search_height, L"Search And History");
+      const int row_label_x = content_x;
+      const int row_label_width = 110;
+      const int row_combo_x = row_label_x + row_label_width + 8;
+      const int row_combo_width = content_width - row_label_width - 8;
+      int row_y = search_y + 30;
+
+      create_label(row_label_x, row_y + 4, row_label_width, 18, L"Search mode");
+      create_combo(settings_search_mode_combo_, row_combo_x, row_y, row_combo_width);
+      row_y += 34;
+      create_label(row_label_x, row_y + 4, row_label_width, 18, L"Sort order");
+      create_combo(settings_sort_order_combo_, row_combo_x, row_y, row_combo_width);
+      row_y += 34;
+      create_label(row_label_x, row_y + 4, row_label_width, 18, L"Pin position");
+      create_combo(settings_pin_position_combo_, row_combo_x, row_y, row_combo_width);
+      row_y += 34;
+      create_label(row_label_x, row_y + 4, row_label_width, 18, L"History limit");
+      create_combo(settings_history_limit_combo_, row_combo_x, row_y, row_combo_width);
+
+      create_group(left_x, capture_y, left_width, capture_height, L"Capture Filters");
+      checkbox_y = capture_y + 24;
+      create_checkbox(settings_ignore_all_check_, content_x, checkbox_y, content_width, L"Ignore all captures");
+      checkbox_y += 24;
+      create_checkbox(settings_capture_text_check_, content_x, checkbox_y, content_width, L"Capture plain text");
+      checkbox_y += 24;
+      create_checkbox(settings_capture_html_check_, content_x, checkbox_y, content_width, L"Capture HTML");
+      checkbox_y += 24;
+      create_checkbox(settings_capture_rtf_check_, content_x, checkbox_y, content_width, L"Capture rich text");
+      checkbox_y += 24;
+      create_checkbox(settings_capture_images_check_, content_x, checkbox_y, content_width, L"Capture images");
+      checkbox_y += 24;
+      create_checkbox(settings_capture_files_check_, content_x, checkbox_y, content_width, L"Capture file lists");
+
+      const int rules_y = 12;
+      const int rules_height = button_y - rules_y - section_gap;
+      create_group(right_x, rules_y, right_width, rules_height, L"Ignore Rules");
+
+      const int rules_content_x = right_x + 12;
+      const int rules_content_width = right_width - 24;
+      const int rules_edit_height = 100;
+      int rules_section_y = rules_y + 24;
+
+      create_label(
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          18,
+          L"Ignored applications (one executable name per line)");
+      rules_section_y += 22;
+      create_multiline_edit(
+          settings_ignored_apps_edit_,
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          rules_edit_height);
+      rules_section_y += rules_edit_height + 12;
+
+      create_label(
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          18,
+          L"Allowed applications (overrides ignored applications)");
+      rules_section_y += 22;
+      create_multiline_edit(
+          settings_allowed_apps_edit_,
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          rules_edit_height);
+      rules_section_y += rules_edit_height + 12;
+
+      create_label(
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          18,
+          L"Ignored text patterns (one regular expression per line)");
+      rules_section_y += 22;
+      create_multiline_edit(
+          settings_ignored_patterns_edit_,
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          rules_edit_height);
+      rules_section_y += rules_edit_height + 12;
+
+      create_label(
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          18,
+          L"Ignored content formats (one format name per line)");
+      rules_section_y += 22;
+      create_multiline_edit(
+          settings_ignored_formats_edit_,
+          rules_content_x,
+          rules_section_y,
+          rules_content_width,
+          rules_edit_height);
+
+      AddComboItem(settings_search_mode_combo_, L"Mixed");
+      AddComboItem(settings_search_mode_combo_, L"Exact");
+      AddComboItem(settings_search_mode_combo_, L"Fuzzy");
+      AddComboItem(settings_search_mode_combo_, L"Regexp");
+
+      AddComboItem(settings_sort_order_combo_, L"Last Copied");
+      AddComboItem(settings_sort_order_combo_, L"First Copied");
+      AddComboItem(settings_sort_order_combo_, L"Copy Count");
+
+      AddComboItem(settings_pin_position_combo_, L"Pins on Top");
+      AddComboItem(settings_pin_position_combo_, L"Pins on Bottom");
+
+      AddComboItem(settings_history_limit_combo_, L"50");
+      AddComboItem(settings_history_limit_combo_, L"100");
+      AddComboItem(settings_history_limit_combo_, L"200");
+      AddComboItem(settings_history_limit_combo_, L"500");
+
+      HWND save_button = CreateWindowExW(
+          0,
+          L"BUTTON",
+          L"Save",
+          WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+          save_x,
+          button_y,
+          button_width,
+          button_height,
+          window,
+          reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsSaveButtonId)),
+          instance_,
+          nullptr);
+      apply_font(save_button);
+
+      HWND apply_button = CreateWindowExW(
+          0,
+          L"BUTTON",
+          L"Apply",
+          WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+          apply_x,
+          button_y,
+          button_width,
+          button_height,
+          window,
+          reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsApplyButtonId)),
+          instance_,
+          nullptr);
+      apply_font(apply_button);
+
+      HWND close_button = CreateWindowExW(
+          0,
+          L"BUTTON",
+          L"Close",
+          WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+          close_x,
+          button_y,
+          button_width,
+          button_height,
+          window,
+          reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSettingsCloseButtonId)),
+          instance_,
+          nullptr);
+      apply_font(close_button);
+
+      SyncSettingsWindowControls();
+      return 0;
+    }
+    case WM_COMMAND:
+      switch (LOWORD(wparam)) {
+        case kSettingsSaveButtonId:
+          if (ApplySettingsWindowChanges()) {
+            CloseSettingsWindow();
+          }
+          return 0;
+        case kSettingsApplyButtonId:
+          ApplySettingsWindowChanges();
+          return 0;
+        case kSettingsCloseButtonId:
+          CloseSettingsWindow();
+          return 0;
+        default:
+          break;
+      }
+      break;
+    case WM_CLOSE:
+      CloseSettingsWindow();
+      return 0;
+    case WM_DESTROY:
+      if (settings_window_ == window) {
+        settings_window_ = nullptr;
+      }
+      settings_capture_enabled_check_ = nullptr;
+      settings_auto_paste_check_ = nullptr;
+      settings_plain_text_check_ = nullptr;
+      settings_start_on_login_check_ = nullptr;
+      settings_show_search_check_ = nullptr;
+      settings_show_preview_check_ = nullptr;
+      settings_remember_position_check_ = nullptr;
+      settings_show_startup_guide_check_ = nullptr;
+      settings_ignore_all_check_ = nullptr;
+      settings_capture_text_check_ = nullptr;
+      settings_capture_html_check_ = nullptr;
+      settings_capture_rtf_check_ = nullptr;
+      settings_capture_images_check_ = nullptr;
+      settings_capture_files_check_ = nullptr;
+      settings_search_mode_combo_ = nullptr;
+      settings_sort_order_combo_ = nullptr;
+      settings_pin_position_combo_ = nullptr;
+      settings_history_limit_combo_ = nullptr;
+      settings_ignored_apps_edit_ = nullptr;
+      settings_allowed_apps_edit_ = nullptr;
+      settings_ignored_patterns_edit_ = nullptr;
+      settings_ignored_formats_edit_ = nullptr;
+      return 0;
+    default:
+      break;
+  }
+
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
 LRESULT CALLBACK Win32App::StaticControllerWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
   if (message == WM_NCCREATE) {
     const auto* create_struct = reinterpret_cast<CREATESTRUCTW*>(lparam);
@@ -1965,6 +2675,20 @@ LRESULT CALLBACK Win32App::StaticPinEditorWindowProc(HWND window, UINT message, 
 
   if (auto* self = FromWindowUserData(window); self != nullptr) {
     return self->HandlePinEditorMessage(window, message, wparam, lparam);
+  }
+
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+LRESULT CALLBACK Win32App::StaticSettingsWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (message == WM_NCCREATE) {
+    const auto* create_struct = reinterpret_cast<CREATESTRUCTW*>(lparam);
+    auto* self = static_cast<Win32App*>(create_struct->lpCreateParams);
+    SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+  }
+
+  if (auto* self = FromWindowUserData(window); self != nullptr) {
+    return self->HandleSettingsWindowMessage(window, message, wparam, lparam);
   }
 
   return DefWindowProcW(window, message, wparam, lparam);
