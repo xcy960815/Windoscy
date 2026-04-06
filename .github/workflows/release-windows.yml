@@ -1,17 +1,15 @@
-name: Build Windows
+name: Release Windows
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-  workflow_dispatch:
+    tags:
+      - 'v*'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  release:
     runs-on: windows-2022
 
     steps:
@@ -38,9 +36,26 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path package\* -DestinationPath maccy-windows-x64.zip
 
-      - name: Upload executable package
+      - name: Upload release artifact
         uses: actions/upload-artifact@v6
         with:
           name: maccy-windows-x64
           path: maccy-windows-x64.zip
           if-no-files-found: error
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          $asset = "maccy-windows-x64.zip"
+          $notes = "Automated Windows build for $tag."
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $asset --clobber
+          } else {
+            gh release create $tag $asset --title $tag --notes $notes
+          }
