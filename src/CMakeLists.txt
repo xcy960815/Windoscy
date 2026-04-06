@@ -19,6 +19,7 @@ endif()
 if(WIN32)
   add_executable(maccy_win WIN32
     app/main_win32.cpp
+    app/resources/maccy.rc
     app/win32_app.cpp
     platform/win32/clipboard.cpp
     platform/win32/input.cpp

@@ -1,6 +1,7 @@
 #ifdef _WIN32
 
 #include "app/win32_app.h"
+#include "app/resources/resource.h"
 
 #include <shellapi.h>
 #include <windows.h>
@@ -38,6 +39,37 @@ constexpr wchar_t kWindowTitle[] = L"Maccy Windows";
 void ShowDialog(HWND owner, std::wstring_view message, UINT flags) {
   const std::wstring text(message);
   MessageBoxW(owner, text.c_str(), kWindowTitle, MB_OK | flags);
+}
+
+HICON LoadSizedAppIcon(HINSTANCE instance, int width, int height) {
+  if (instance != nullptr) {
+    const auto icon = static_cast<HICON>(LoadImageW(
+        instance,
+        MAKEINTRESOURCEW(IDI_APP_ICON),
+        IMAGE_ICON,
+        width,
+        height,
+        LR_DEFAULTCOLOR | LR_SHARED));
+    if (icon != nullptr) {
+      return icon;
+    }
+  }
+
+  return static_cast<HICON>(LoadImageW(
+      nullptr,
+      IDI_APPLICATION,
+      IMAGE_ICON,
+      width,
+      height,
+      LR_DEFAULTCOLOR | LR_SHARED));
+}
+
+HICON LoadLargeAppIcon(HINSTANCE instance) {
+  return LoadSizedAppIcon(instance, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+}
+
+HICON LoadSmallAppIcon(HINSTANCE instance) {
+  return LoadSizedAppIcon(instance, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
 }
 
 RECT MonitorWorkAreaForPoint(POINT point) {
@@ -355,32 +387,44 @@ void Win32App::Shutdown() {
 }
 
 bool Win32App::RegisterWindowClasses() {
-  WNDCLASSW controller_class{};
+  const HICON large_icon = LoadLargeAppIcon(instance_);
+  const HICON small_icon = LoadSmallAppIcon(instance_);
+
+  WNDCLASSEXW controller_class{};
+  controller_class.cbSize = sizeof(controller_class);
   controller_class.lpfnWndProc = StaticControllerWindowProc;
   controller_class.hInstance = instance_;
   controller_class.lpszClassName = kControllerWindowClass;
   controller_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-  if (RegisterClassW(&controller_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+  controller_class.hIcon = large_icon;
+  controller_class.hIconSm = small_icon;
+  if (RegisterClassExW(&controller_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     return false;
   }
 
-  WNDCLASSW popup_class{};
+  WNDCLASSEXW popup_class{};
+  popup_class.cbSize = sizeof(popup_class);
   popup_class.lpfnWndProc = StaticPopupWindowProc;
   popup_class.hInstance = instance_;
   popup_class.lpszClassName = kPopupWindowClass;
   popup_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
   popup_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-  if (RegisterClassW(&popup_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+  popup_class.hIcon = large_icon;
+  popup_class.hIconSm = small_icon;
+  if (RegisterClassExW(&popup_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     return false;
   }
 
-  WNDCLASSW pin_editor_class{};
+  WNDCLASSEXW pin_editor_class{};
+  pin_editor_class.cbSize = sizeof(pin_editor_class);
   pin_editor_class.lpfnWndProc = StaticPinEditorWindowProc;
   pin_editor_class.hInstance = instance_;
   pin_editor_class.lpszClassName = kPinEditorWindowClass;
   pin_editor_class.hCursor = LoadCursorW(nullptr, IDC_IBEAM);
   pin_editor_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-  if (RegisterClassW(&pin_editor_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+  pin_editor_class.hIcon = large_icon;
+  pin_editor_class.hIconSm = small_icon;
+  if (RegisterClassExW(&pin_editor_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
     return false;
   }
 
@@ -430,7 +474,7 @@ bool Win32App::SetupTrayIcon() {
   icon.uID = kTrayIconId;
   icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
   icon.uCallbackMessage = kTrayMessage;
-  icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+  icon.hIcon = LoadSmallAppIcon(instance_);
   const auto tooltip = BuildTrayTooltip(capture_enabled_, store_);
   lstrcpynW(icon.szTip, tooltip.c_str(), ARRAYSIZE(icon.szTip));
 
