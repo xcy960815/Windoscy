@@ -22,6 +22,14 @@ target_link_libraries(maccy_search_modes_test PRIVATE maccy_core)
 
 add_test(NAME maccy_search_modes_test COMMAND maccy_search_modes_test)
 
+add_executable(maccy_search_highlight_test
+  search_highlight_test.cpp
+)
+
+target_link_libraries(maccy_search_highlight_test PRIVATE maccy_core)
+
+add_test(NAME maccy_search_highlight_test COMMAND maccy_search_highlight_test)
+
 add_executable(maccy_history_persistence_test
   history_persistence_test.cpp
 )
@@ -29,3 +37,19 @@ add_executable(maccy_history_persistence_test
 target_link_libraries(maccy_history_persistence_test PRIVATE maccy_core)
 
 add_test(NAME maccy_history_persistence_test COMMAND maccy_history_persistence_test)
+
+add_executable(maccy_settings_test
+  settings_test.cpp
+)
+
+target_link_libraries(maccy_settings_test PRIVATE maccy_core)
+
+add_test(NAME maccy_settings_test COMMAND maccy_settings_test)
+
+add_executable(maccy_ignore_rules_test
+  ignore_rules_test.cpp
+)
+
+target_link_libraries(maccy_ignore_rules_test PRIVATE maccy_core)
+
+add_test(NAME maccy_ignore_rules_test COMMAND maccy_ignore_rules_test)

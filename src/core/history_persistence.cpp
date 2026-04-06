@@ -208,6 +208,7 @@ bool SaveHistoryFile(
            << '\t' << item.metadata.last_copied_at
            << '\t' << (item.metadata.from_app ? "1" : "0")
            << '\t' << (item.metadata.modified_after_copy ? "1" : "0")
+           << '\t' << (item.title_overridden ? "1" : "0")
            << '\n';
 
     for (const auto& content : item.contents) {
@@ -272,6 +273,7 @@ std::vector<HistoryItem> LoadHistoryFile(const std::filesystem::path& path) {
         current_item.metadata.last_copied_at = ParseUint64(fields[8]);
         current_item.metadata.from_app = ParseBool(fields[9]);
         current_item.metadata.modified_after_copy = ParseBool(fields[10]);
+        current_item.title_overridden = fields.size() >= 12 ? ParseBool(fields[11]) : false;
       }
       continue;
     }

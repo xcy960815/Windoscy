@@ -21,6 +21,7 @@ maccy::HistoryItem MakeTextItem(std::string title, std::string text, std::string
 int main() {
   using maccy::HistoryStore;
   using maccy::HistoryStoreOptions;
+  using maccy::HistorySortOrder;
   using maccy::PinPosition;
 
   {
@@ -78,6 +79,54 @@ int main() {
     assert(store.TogglePin(first_id));
     assert(store.items().back().id == first_id);
     assert(store.items().front().id == second_id);
+  }
+
+  {
+    HistoryStore store(HistoryStoreOptions{.max_unpinned_items = 4, .pin_position = PinPosition::kTop});
+    const auto pinned_id = store.Add(MakeTextItem("Pinned", "pinned"));
+    const auto removable_id = store.Add(MakeTextItem("Removable", "removable"));
+    store.Add(MakeTextItem("Keep", "keep"));
+
+    assert(store.TogglePin(pinned_id));
+    assert(store.RemoveById(removable_id));
+    assert(store.FindById(removable_id) == nullptr);
+
+    store.ClearUnpinned();
+    assert(store.items().size() == 1);
+    assert(store.items().front().id == pinned_id);
+
+    store.ClearAll();
+    assert(store.items().empty());
+  }
+
+  {
+    HistoryStore store(HistoryStoreOptions{
+        .max_unpinned_items = 5,
+        .pin_position = PinPosition::kTop,
+        .sort_order = HistorySortOrder::kCopyCount,
+    });
+    const auto alpha = store.Add(MakeTextItem("Alpha", "alpha"));
+    const auto beta = store.Add(MakeTextItem("Beta", "beta"));
+    store.Add(MakeTextItem("beta again", "beta"));
+
+    assert(store.FindById(beta)->metadata.copy_count == 2);
+    assert(store.items().front().id == beta);
+    assert(store.items().back().id == alpha);
+  }
+
+  {
+    HistoryStore store(HistoryStoreOptions{.max_unpinned_items = 5, .pin_position = PinPosition::kTop});
+    const auto pinned_id = store.Add(MakeTextItem("Pinned", "before edit"));
+    assert(store.TogglePin(pinned_id));
+    assert(store.RenamePinnedItem(pinned_id, "Manual Title"));
+    assert(store.UpdatePinnedText(pinned_id, "after edit"));
+
+    const auto* item = store.FindById(pinned_id);
+    assert(item != nullptr);
+    assert(item->title == "Manual Title");
+    assert(item->title_overridden);
+    assert(item->PreferredContentText() == "after edit");
+    assert(item->metadata.modified_after_copy);
   }
 
   return 0;

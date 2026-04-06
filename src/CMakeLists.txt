@@ -1,8 +1,11 @@
 add_library(maccy_core STATIC
   core/history_item.cpp
+  core/ignore_rules.cpp
   core/history_persistence.cpp
   core/history_store.cpp
   core/search.cpp
+  core/search_highlight.cpp
+  core/settings.cpp
 )
 
 target_include_directories(maccy_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -19,6 +22,8 @@ if(WIN32)
     app/win32_app.cpp
     platform/win32/clipboard.cpp
     platform/win32/input.cpp
+    platform/win32/source_app.cpp
+    platform/win32/startup.cpp
     platform/win32/utf.cpp
   )
 

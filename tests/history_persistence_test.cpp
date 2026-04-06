@@ -12,6 +12,7 @@ maccy::HistoryItem MakeItem() {
   maccy::HistoryItem item;
   item.id = 42;
   item.title = "Pinned title";
+  item.title_overridden = true;
   item.pinned = true;
   item.pin_key = 'b';
   item.metadata.source_application = "Code\tEditor";
@@ -43,6 +44,7 @@ int main() {
   assert(loaded.size() == 1);
   assert(loaded[0].id == original[0].id);
   assert(loaded[0].title == original[0].title);
+  assert(loaded[0].title_overridden == original[0].title_overridden);
   assert(loaded[0].pinned == original[0].pinned);
   assert(loaded[0].pin_key == original[0].pin_key);
   assert(loaded[0].metadata.source_application == original[0].metadata.source_application);

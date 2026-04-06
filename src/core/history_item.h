@@ -35,6 +35,7 @@ struct HistoryMetadata {
 struct HistoryItem {
   std::uint64_t id = 0;
   std::string title;
+  bool title_overridden = false;
   std::vector<ContentBlob> contents;
   HistoryMetadata metadata;
   bool pinned = false;
@@ -47,6 +48,7 @@ struct HistoryItem {
 };
 
 [[nodiscard]] std::string NormalizeForSearch(std::string_view value);
+[[nodiscard]] std::string BuildAutomaticTitle(std::string_view value, std::size_t max_length = 80);
 [[nodiscard]] std::string ContentFormatName(ContentFormat format);
 
 }  // namespace maccy

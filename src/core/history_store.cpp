@@ -13,6 +13,19 @@ bool BlobEquals(const ContentBlob& lhs, const ContentBlob& rhs) {
          lhs.text_payload == rhs.text_payload;
 }
 
+std::uint64_t SortKeyForOrder(const HistoryItem& item, HistorySortOrder order) {
+  switch (order) {
+    case HistorySortOrder::kLastCopied:
+      return item.metadata.last_copied_at;
+    case HistorySortOrder::kFirstCopied:
+      return item.metadata.first_copied_at;
+    case HistorySortOrder::kCopyCount:
+      return item.metadata.copy_count;
+  }
+
+  return item.metadata.last_copied_at;
+}
+
 }  // namespace
 
 HistoryStore::HistoryStore(HistoryStoreOptions options)
@@ -55,6 +68,12 @@ std::uint64_t HistoryStore::Add(HistoryItem item) {
   return new_id;
 }
 
+void HistoryStore::SetOptions(HistoryStoreOptions options) {
+  options_ = std::move(options);
+  SortItems();
+  EnforceLimit();
+}
+
 bool HistoryStore::RemoveById(std::uint64_t id) {
   const auto old_size = items_.size();
   std::erase_if(items_, [id](const HistoryItem& item) { return item.id == id; });
@@ -79,6 +98,48 @@ bool HistoryStore::TogglePin(std::uint64_t id) {
     item->pin_key = available.front();
   }
 
+  SortItems();
+  return true;
+}
+
+bool HistoryStore::RenamePinnedItem(std::uint64_t id, std::string title) {
+  HistoryItem* item = FindById(id);
+  if (item == nullptr || !item->pinned) {
+    return false;
+  }
+
+  item->title = std::move(title);
+  item->title_overridden = !item->title.empty();
+  item->metadata.modified_after_copy = true;
+  item->metadata.last_copied_at = next_tick_++;
+  SortItems();
+  return true;
+}
+
+bool HistoryStore::UpdatePinnedText(std::uint64_t id, std::string text) {
+  HistoryItem* item = FindById(id);
+  if (item == nullptr || !item->pinned) {
+    return false;
+  }
+
+  auto plain_text = std::find_if(
+      item->contents.begin(),
+      item->contents.end(),
+      [](const ContentBlob& blob) { return blob.format == ContentFormat::kPlainText; });
+  if (plain_text == item->contents.end()) {
+    item->contents.insert(
+        item->contents.begin(),
+        ContentBlob{ContentFormat::kPlainText, "", std::move(text)});
+  } else {
+    plain_text->text_payload = std::move(text);
+  }
+
+  if (!item->title_overridden) {
+    item->title = BuildAutomaticTitle(item->PreferredContentText());
+  }
+
+  item->metadata.modified_after_copy = true;
+  item->metadata.last_copied_at = next_tick_++;
   SortItems();
   return true;
 }
@@ -151,9 +212,15 @@ void HistoryStore::SortItems() {
   std::stable_sort(
       items_.begin(),
       items_.end(),
-      [pin_position = options_.pin_position](const HistoryItem& lhs, const HistoryItem& rhs) {
+      [pin_position = options_.pin_position, sort_order = options_.sort_order](const HistoryItem& lhs, const HistoryItem& rhs) {
         if (lhs.pinned != rhs.pinned) {
           return pin_position == PinPosition::kTop ? lhs.pinned : !lhs.pinned;
+        }
+
+        if (const auto lhs_key = SortKeyForOrder(lhs, sort_order),
+            rhs_key = SortKeyForOrder(rhs, sort_order);
+            lhs_key != rhs_key) {
+          return lhs_key > rhs_key;
         }
 
         return lhs.metadata.last_copied_at > rhs.metadata.last_copied_at;
@@ -188,7 +255,10 @@ void HistoryStore::MergeInto(HistoryItem& target, const HistoryItem& incoming) {
     }
   }
 
-  if (target.title.empty() && !incoming.title.empty()) {
+  if (incoming.title_overridden && !incoming.title.empty()) {
+    target.title = incoming.title;
+    target.title_overridden = true;
+  } else if (target.title.empty() && !incoming.title.empty()) {
     target.title = incoming.title;
   }
 

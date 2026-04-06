@@ -15,9 +15,16 @@ enum class PinPosition {
   kBottom,
 };
 
+enum class HistorySortOrder {
+  kLastCopied,
+  kFirstCopied,
+  kCopyCount,
+};
+
 struct HistoryStoreOptions {
   std::size_t max_unpinned_items = 200;
   PinPosition pin_position = PinPosition::kTop;
+  HistorySortOrder sort_order = HistorySortOrder::kLastCopied;
 };
 
 class HistoryStore {
@@ -28,8 +35,11 @@ class HistoryStore {
   [[nodiscard]] const HistoryStoreOptions& options() const;
 
   std::uint64_t Add(HistoryItem item);
+  void SetOptions(HistoryStoreOptions options);
   bool RemoveById(std::uint64_t id);
   bool TogglePin(std::uint64_t id);
+  bool RenamePinnedItem(std::uint64_t id, std::string title);
+  bool UpdatePinnedText(std::uint64_t id, std::string text);
   void ClearUnpinned();
   void ClearAll();
   void ReplaceAll(std::vector<HistoryItem> items);
