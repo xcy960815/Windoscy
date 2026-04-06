@@ -3,6 +3,7 @@
 #include "platform/win32/clipboard.h"
 
 #include <shellapi.h>
+#include <shlobj_core.h>
 #include <windows.h>
 
 #include <algorithm>

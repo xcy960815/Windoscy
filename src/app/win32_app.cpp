@@ -52,8 +52,18 @@ DWORD PopupWindowStyle() {
 }
 
 std::filesystem::path ResolveAppDataDirectory() {
-  if (const wchar_t* local_app_data = _wgetenv(L"LOCALAPPDATA"); local_app_data != nullptr && *local_app_data != L'\0') {
-    return std::filesystem::path(local_app_data) / "MaccyWindows";
+  wchar_t* local_app_data = nullptr;
+  std::size_t length = 0;
+  if (_wdupenv_s(&local_app_data, &length, L"LOCALAPPDATA") == 0 &&
+      local_app_data != nullptr &&
+      *local_app_data != L'\0') {
+    const std::filesystem::path path = std::filesystem::path(local_app_data) / "MaccyWindows";
+    std::free(local_app_data);
+    return path;
+  }
+
+  if (local_app_data != nullptr) {
+    std::free(local_app_data);
   }
 
   return std::filesystem::current_path() / "MaccyWindows";
@@ -731,7 +741,7 @@ void Win32App::PersistSettings() {
   settings_.capture_enabled = capture_enabled_;
   SavePopupPlacement();
   if (!settings_path_.empty()) {
-    SaveSettingsFile(settings_path_, settings_);
+    (void)SaveSettingsFile(settings_path_, settings_);
   }
 }
 
@@ -750,7 +760,7 @@ void Win32App::LoadHistory() {
 
 void Win32App::PersistHistory() const {
   if (!history_path_.empty()) {
-    SaveHistoryFile(history_path_, store_.items());
+    (void)SaveHistoryFile(history_path_, store_.items());
   }
 }
 
@@ -1231,27 +1241,33 @@ void Win32App::LayoutPinEditorControls() {
 
   RECT client_rect{};
   GetClientRect(pin_editor_window_, &client_rect);
+  const int client_width = static_cast<int>(client_rect.right - client_rect.left);
+  const int client_height = static_cast<int>(client_rect.bottom - client_rect.top);
 
   const int button_width = 96;
   const int button_height = 28;
   const int padding = 12;
   const int edit_height = pin_editor_rename_only_
                               ? 32
-                              : std::max(160, client_rect.bottom - client_rect.top - button_height - (padding * 3));
+                              : std::max(160, client_height - button_height - (padding * 3));
+  const int edit_width = std::max(120, client_width - (padding * 2));
+  const int save_button_x = std::max(padding, client_width - padding - button_width * 2 - 8);
+  const int cancel_button_x = std::max(padding, client_width - padding - button_width);
+  const int button_y = client_height - padding - button_height;
 
   MoveWindow(
       pin_editor_edit_,
       padding,
       padding,
-      std::max(120, client_rect.right - client_rect.left - (padding * 2)),
+      edit_width,
       edit_height,
       TRUE);
 
   if (HWND save_button = GetDlgItem(pin_editor_window_, kPinEditorSaveButtonId); save_button != nullptr) {
     MoveWindow(
         save_button,
-        std::max(padding, client_rect.right - padding - button_width * 2 - 8),
-        client_rect.bottom - padding - button_height,
+        save_button_x,
+        button_y,
         button_width,
         button_height,
         TRUE);
@@ -1260,8 +1276,8 @@ void Win32App::LayoutPinEditorControls() {
   if (HWND cancel_button = GetDlgItem(pin_editor_window_, kPinEditorCancelButtonId); cancel_button != nullptr) {
     MoveWindow(
         cancel_button,
-        std::max(padding, client_rect.right - padding - button_width),
-        client_rect.bottom - padding - button_height,
+        cancel_button_x,
+        button_y,
         button_width,
         button_height,
         TRUE);
@@ -1290,7 +1306,7 @@ void Win32App::ActivateSelectedItem() {
       previous_foreground_window_ != nullptr &&
       previous_foreground_window_ != popup_window_ &&
       previous_foreground_window_ != controller_window_) {
-    win32::SendPasteShortcut(previous_foreground_window_);
+    (void)win32::SendPasteShortcut(previous_foreground_window_);
   }
 }
 
