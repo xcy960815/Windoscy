@@ -1,0 +1,15 @@
+build/
+package/
+*.zip
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+*.pdb
+*.obj
+*.ilk
+*.exe
+*.lib
+*.exp
+*.dll
+*.cache
