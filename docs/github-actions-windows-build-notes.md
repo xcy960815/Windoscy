@@ -50,10 +50,12 @@
   - 执行 `cmake --install`
   - 生成 `maccy-windows-x64.zip`
   - 上传 GitHub Actions artifact
+  - 如果当前触发是 `tag push`，则自动创建或更新对应 GitHub Release
+  - 将 `maccy-windows-x64.zip` 上传为 Release asset
 
 ## 为什么这样配置
 
-这次没有直接照搬源项目的发布模式，而是先做了更适合当前阶段的简化版本。
+这次最初没有直接照搬源项目的发布模式，而是先做了更适合当前阶段的简化版本。
 
 原因如下：
 
@@ -65,7 +67,11 @@
   - 基础测试是否能跑
   - 安装布局是否可用
 
-等项目进入可分发阶段后，再升级到更接近源项目的发布流程。
+现在已经补上第一版 Release 发布能力，但仍然保持当前阶段的轻量策略：
+
+- 普通 `push` / `pull_request` 继续只做构建验证和 artifact 上传
+- `tag push` 在构建成功后自动发布 GitHub Release
+- 当前 Release asset 仍然是基础 zip 包，不是安装器
 
 ## 当前配套改动
 
@@ -102,15 +108,17 @@
 - 上传到 GitHub Release
 - 自动更新 `appcast.xml`
 
-当前 Windows workflow 还没有做这些事情：
+当前 Windows workflow 已经补上的能力：
 
 - tag 发布
 - 自动创建 GitHub Release
 - 自动上传 release asset
+
+当前仍然没有做这些事情：
+
 - 安装器生成
 - 自动更新元数据
-
-这是有意为之，因为当前阶段更重要的是先稳定“远程构建”本身。
+- 代码签名
 
 ## 当前已知限制
 
@@ -131,14 +139,17 @@
 
 后续如果要正式分发，这一项迟早要补。
 
-### 3. 还没有发布到 GitHub Releases
+### 3. Release 目前仍然是基础发布链路
 
-当前仅上传 Actions artifact，没有自动创建 release。
+当前已经支持通过 tag 自动创建 GitHub Release，并上传：
 
-这意味着：
+- `maccy-windows-x64.zip`
 
-- 可以下载测试
-- 但还不适合当正式版本分发链路
+但现在仍然属于“基础发布链路”，还没有：
+
+- 安装器
+- 签名
+- 更完整的版本说明生成
 
 ### 4. 目前只做 `x64`
 
@@ -161,13 +172,19 @@
 - 产物结构稳定
 - 基础测试持续可跑
 
-### 第二阶段：增加 tag 发布
+### 第二阶段：增强 tag 发布
 
-参考源项目的思路，后续可增加：
+当前已经支持：
 
 - tag 触发
 - 自动创建 GitHub Release
 - 自动上传 `zip`
+
+后续可以继续补：
+
+- release notes 自动生成
+- pre-release / stable 发布策略
+- 多架构产物命名规范
 
 ### 第三阶段：生成安装器
 
@@ -193,6 +210,6 @@
 
 - 先把 Windows 远程编译能力建起来
 - 先让每次改动都能被 Actions 验证
-- 先用 artifact 形成可下载的测试产物
+- 在 tag 场景下，先具备最小可用的 Release 发布能力
 
 这与源项目当前更成熟的发布链路相比，属于更早期、更轻量的一步，但方向是一致的。
