@@ -35,6 +35,8 @@ constexpr wchar_t kControllerWindowClass[] = L"MaccyWindowsController";
 constexpr wchar_t kPopupWindowClass[] = L"MaccyWindowsPopup";
 constexpr wchar_t kPinEditorWindowClass[] = L"MaccyWindowsPinEditor";
 constexpr wchar_t kWindowTitle[] = L"Maccy Windows";
+constexpr wchar_t kSingleInstanceMutexName[] = L"Local\\MaccyWindowsSingleInstance";
+constexpr UINT kActivateExistingInstanceMessage = WM_APP + 2;
 
 void ShowDialog(HWND owner, std::wstring_view message, UINT flags) {
   const std::wstring text(message);
@@ -296,12 +298,46 @@ std::wstring ReadWindowText(HWND window) {
   return text;
 }
 
+bool NotifyExistingInstance() {
+  for (int attempt = 0; attempt < 20; ++attempt) {
+    const HWND existing_window = FindWindowW(kControllerWindowClass, nullptr);
+    if (existing_window != nullptr) {
+      PostMessageW(existing_window, kActivateExistingInstanceMessage, 0, 0);
+      return true;
+    }
+
+    Sleep(100);
+  }
+
+  return false;
+}
+
+void CloseLegacyInstances() {
+  HWND existing_window = nullptr;
+  while ((existing_window = FindWindowExW(nullptr, existing_window, kControllerWindowClass, nullptr)) != nullptr) {
+    PostMessageW(existing_window, WM_CLOSE, 0, 0);
+  }
+
+  for (int attempt = 0; attempt < 20; ++attempt) {
+    if (FindWindowW(kControllerWindowClass, nullptr) == nullptr) {
+      return;
+    }
+
+    Sleep(100);
+  }
+}
+
 }  // namespace
 
 int Win32App::Run(HINSTANCE instance, int show_command) {
   (void)show_command;
 
+  if (!AcquireSingleInstance()) {
+    return 0;
+  }
+
   if (!Initialize(instance)) {
+    ReleaseSingleInstance();
     return 1;
   }
 
@@ -315,12 +351,29 @@ int Win32App::Run(HINSTANCE instance, int show_command) {
   return static_cast<int>(message.wParam);
 }
 
+bool Win32App::AcquireSingleInstance() {
+  single_instance_mutex_ = CreateMutexW(nullptr, FALSE, kSingleInstanceMutexName);
+  if (single_instance_mutex_ == nullptr) {
+    return true;
+  }
+
+  if (GetLastError() != ERROR_ALREADY_EXISTS) {
+    return true;
+  }
+
+  NotifyExistingInstance();
+  CloseHandle(single_instance_mutex_);
+  single_instance_mutex_ = nullptr;
+  return false;
+}
+
 bool Win32App::Initialize(HINSTANCE instance) {
   instance_ = instance;
   taskbar_created_message_ = RegisterWindowMessageW(L"TaskbarCreated");
   history_path_ = ResolveHistoryPath();
   settings_path_ = ResolveSettingsPath();
   LoadSettings();
+  CloseLegacyInstances();
 
   if (!RegisterWindowClasses()) {
     return false;
@@ -384,6 +437,14 @@ void Win32App::Shutdown() {
 
   PersistSettings();
   PersistHistory();
+  ReleaseSingleInstance();
+}
+
+void Win32App::ReleaseSingleInstance() {
+  if (single_instance_mutex_ != nullptr) {
+    CloseHandle(single_instance_mutex_);
+    single_instance_mutex_ = nullptr;
+  }
 }
 
 bool Win32App::RegisterWindowClasses() {
@@ -1453,6 +1514,9 @@ LRESULT Win32App::HandleControllerMessage(HWND window, UINT message, WPARAM wpar
   }
 
   switch (message) {
+    case kActivateExistingInstanceMessage:
+      ShowPopup();
+      return 0;
     case WM_HOTKEY:
       if (static_cast<int>(wparam) == kToggleHotKeyId) {
         TogglePopup();

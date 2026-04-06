@@ -61,6 +61,8 @@ class Win32App {
 
   bool Initialize(HINSTANCE instance);
   void Shutdown();
+  bool AcquireSingleInstance();
+  void ReleaseSingleInstance();
 
   bool RegisterWindowClasses();
   bool CreateControllerWindow();
@@ -124,6 +126,7 @@ class Win32App {
   HWND preview_edit_ = nullptr;
   HWND pin_editor_window_ = nullptr;
   HWND pin_editor_edit_ = nullptr;
+  HANDLE single_instance_mutex_ = nullptr;
   WNDPROC original_search_edit_proc_ = nullptr;
   WNDPROC original_list_box_proc_ = nullptr;
   UINT taskbar_created_message_ = 0;
