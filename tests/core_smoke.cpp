@@ -33,6 +33,7 @@ int main() {
   const auto results = maccy::ExactSearch("alpha", items);
   assert(results.size() == 1);
   assert(results.front() == &items[1]);
+  assert(maccy::Search(maccy::SearchMode::kExact, "", items).size() == items.size());
 
   return 0;
 }

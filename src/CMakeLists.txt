@@ -1,5 +1,7 @@
 add_library(maccy_core STATIC
   core/history_item.cpp
+  core/history_persistence.cpp
+  core/history_store.cpp
   core/search.cpp
 )
 
@@ -14,6 +16,10 @@ endif()
 if(WIN32)
   add_executable(maccy_win WIN32
     app/main_win32.cpp
+    app/win32_app.cpp
+    platform/win32/clipboard.cpp
+    platform/win32/input.cpp
+    platform/win32/utf.cpp
   )
 
   target_compile_definitions(maccy_win PRIVATE

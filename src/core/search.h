@@ -18,5 +18,18 @@ enum class SearchMode {
 [[nodiscard]] std::vector<const HistoryItem*> ExactSearch(
     std::string_view query,
     const std::vector<HistoryItem>& items);
+[[nodiscard]] std::vector<const HistoryItem*> FuzzySearch(
+    std::string_view query,
+    const std::vector<HistoryItem>& items);
+[[nodiscard]] std::vector<const HistoryItem*> RegexpSearch(
+    std::string_view query,
+    const std::vector<HistoryItem>& items);
+[[nodiscard]] std::vector<const HistoryItem*> MixedSearch(
+    std::string_view query,
+    const std::vector<HistoryItem>& items);
+[[nodiscard]] std::vector<const HistoryItem*> Search(
+    SearchMode mode,
+    std::string_view query,
+    const std::vector<HistoryItem>& items);
 
 }  // namespace maccy

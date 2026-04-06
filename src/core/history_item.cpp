@@ -57,30 +57,37 @@ std::string ContentFormatName(ContentFormat format) {
   return "unknown";
 }
 
-std::string HistoryItem::PreferredSearchText() const {
-  if (!title.empty()) {
-    return NormalizeForSearch(title);
-  }
-
+std::string HistoryItem::PreferredContentText() const {
   for (const auto& content : contents) {
     if (content.format == ContentFormat::kPlainText && !content.text_payload.empty()) {
-      return NormalizeForSearch(content.text_payload);
+      return content.text_payload;
     }
   }
 
   for (const auto& content : contents) {
     if (!content.text_payload.empty()) {
-      return NormalizeForSearch(content.text_payload);
+      return content.text_payload;
     }
   }
 
   return {};
 }
 
+std::string HistoryItem::PreferredDisplayText() const {
+  if (!title.empty()) {
+    return title;
+  }
+
+  return PreferredContentText();
+}
+
+std::string HistoryItem::PreferredSearchText() const {
+  return NormalizeForSearch(PreferredContentText().empty() ? PreferredDisplayText() : PreferredContentText());
+}
+
 std::string HistoryItem::StableDedupeKey() const {
   std::ostringstream builder;
-  builder << "from_app=" << (metadata.from_app ? "1" : "0")
-          << ";modified=" << (metadata.modified_after_copy ? "1" : "0");
+  builder << "modified=" << (metadata.modified_after_copy ? "1" : "0");
 
   for (const auto& content : contents) {
     builder << '|';
