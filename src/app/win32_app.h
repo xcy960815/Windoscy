@@ -82,6 +82,7 @@ class Win32App {
   bool ApplySettingsWindowChanges();
   void SyncSettingsWindowControls();
   void ShowSettingsPage(int page_index);
+  void SetSettingsDoubleClickModifierSelection(DoubleClickModifierKey key);
 
   void LoadSettings();
   void PersistSettings();
@@ -125,6 +126,7 @@ class Win32App {
   LRESULT HandleSearchEditMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   LRESULT HandlePinEditorMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   LRESULT HandleSettingsWindowMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+  LRESULT HandleSettingsDoubleClickModifierMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
   static LRESULT CALLBACK StaticControllerWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticPopupWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
@@ -132,6 +134,7 @@ class Win32App {
   static LRESULT CALLBACK StaticSearchEditProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticPinEditorWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticSettingsWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+  static LRESULT CALLBACK StaticSettingsDoubleClickModifierProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
   static LRESULT CALLBACK StaticLowLevelKeyboardProc(int code, WPARAM wparam, LPARAM lparam);
 
   static Win32App* FromWindowUserData(HWND window);
@@ -157,7 +160,7 @@ class Win32App {
   HWND settings_plain_text_check_ = nullptr;
   HWND settings_start_on_login_check_ = nullptr;
   HWND settings_double_click_open_check_ = nullptr;
-  HWND settings_double_click_modifier_combo_ = nullptr;
+  HWND settings_double_click_modifier_input_ = nullptr;
   HWND settings_hotkey_ctrl_check_ = nullptr;
   HWND settings_hotkey_alt_check_ = nullptr;
   HWND settings_hotkey_shift_check_ = nullptr;
@@ -187,6 +190,7 @@ class Win32App {
   HANDLE single_instance_mutex_ = nullptr;
   WNDPROC original_search_edit_proc_ = nullptr;
   WNDPROC original_list_box_proc_ = nullptr;
+  WNDPROC original_settings_double_click_modifier_proc_ = nullptr;
   HHOOK double_click_hook_ = nullptr;
   UINT taskbar_created_message_ = 0;
   bool toggle_hotkey_registered_ = false;
@@ -202,6 +206,7 @@ class Win32App {
   AppSettings settings_;
   HistoryStore store_;
   DoubleClickModifierKeyDetector double_click_modifier_detector_;
+  DoubleClickModifierKey settings_double_click_modifier_selection_ = DoubleClickModifierKey::kNone;
   std::uint64_t pin_editor_item_id_ = 0;
   bool pin_editor_rename_only_ = false;
   bool use_chinese_ui_ = false;

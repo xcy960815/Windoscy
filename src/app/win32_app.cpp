@@ -179,32 +179,26 @@ const wchar_t* DoubleClickModifierLabel(bool use_chinese_ui, DoubleClickModifier
   }
 }
 
-int DoubleClickModifierComboIndex(DoubleClickModifierKey key) {
-  switch (key) {
-    case DoubleClickModifierKey::kAlt:
-      return 1;
-    case DoubleClickModifierKey::kShift:
-      return 2;
-    case DoubleClickModifierKey::kControl:
-      return 3;
-    case DoubleClickModifierKey::kNone:
-    default:
-      return 0;
-  }
+DoubleClickModifierKey DoubleClickModifierKeyFromVirtualKey(DWORD virtual_key) {
+  return StandaloneDoubleClickModifierKey(ModifierFlagsForVirtualKey(virtual_key));
 }
 
-DoubleClickModifierKey DoubleClickModifierFromComboSelection(HWND combo) {
-  switch (GetComboSelection(combo, 0)) {
-    case 1:
-      return DoubleClickModifierKey::kAlt;
-    case 2:
-      return DoubleClickModifierKey::kShift;
-    case 3:
-      return DoubleClickModifierKey::kControl;
-    case 0:
-    default:
-      return DoubleClickModifierKey::kNone;
+std::wstring DoubleClickModifierRecorderText(
+    bool use_chinese_ui,
+    DoubleClickModifierKey key,
+    bool recorder_enabled) {
+  if (key != DoubleClickModifierKey::kNone) {
+    return DoubleClickModifierLabel(use_chinese_ui, key);
   }
+
+  if (recorder_enabled) {
+    return UiText(
+        use_chinese_ui,
+        L"Click here and press Ctrl, Alt, or Shift",
+        L"点击这里后按下 Ctrl、Alt 或 Shift");
+  }
+
+  return DoubleClickModifierLabel(use_chinese_ui, DoubleClickModifierKey::kNone);
 }
 
 std::wstring BuildTrayTooltip(bool use_chinese_ui, bool capture_enabled, const HistoryStore& store) {
@@ -1448,6 +1442,9 @@ void Win32App::ShowTrayMenu(const POINT* anchor) {
 }
 
 void Win32App::OpenSettingsWindow() {
+  active_double_click_modifier_flags_ = 0;
+  double_click_modifier_detector_.Reset();
+
   if (settings_window_ != nullptr && IsWindow(settings_window_) != FALSE) {
     ShowWindow(settings_window_, IsIconic(settings_window_) != FALSE ? SW_RESTORE : SW_SHOWNORMAL);
     SetForegroundWindow(settings_window_);
@@ -1515,7 +1512,7 @@ bool Win32App::ApplySettingsWindowChanges() {
   next_settings.popup_hotkey_modifiers = next_hotkey_modifiers;
   next_settings.popup_hotkey_virtual_key = PopupHotKeyVirtualKeyFromComboSelection(settings_hotkey_key_combo_);
   next_settings.double_click_popup_enabled = IsCheckboxChecked(settings_double_click_open_check_);
-  next_settings.double_click_modifier_key = DoubleClickModifierFromComboSelection(settings_double_click_modifier_combo_);
+  next_settings.double_click_modifier_key = settings_double_click_modifier_selection_;
   const PopupOpenTriggerConfiguration requested_open_trigger = OpenTriggerConfigurationForSettings(next_settings);
 
   if (requested_open_trigger == PopupOpenTriggerConfiguration::kRegularShortcut &&
@@ -1610,6 +1607,19 @@ bool Win32App::ApplySettingsWindowChanges() {
   return true;
 }
 
+void Win32App::SetSettingsDoubleClickModifierSelection(DoubleClickModifierKey key) {
+  settings_double_click_modifier_selection_ = key;
+
+  if (settings_double_click_modifier_input_ == nullptr) {
+    return;
+  }
+
+  const bool recorder_enabled =
+      settings_double_click_open_check_ != nullptr && IsCheckboxChecked(settings_double_click_open_check_);
+  const std::wstring text = DoubleClickModifierRecorderText(use_chinese_ui_, key, recorder_enabled);
+  SetWindowTextW(settings_double_click_modifier_input_, text.c_str());
+}
+
 void Win32App::SyncSettingsWindowControls() {
   if (settings_window_ == nullptr || IsWindow(settings_window_) == FALSE) {
     return;
@@ -1639,16 +1649,15 @@ void Win32App::SyncSettingsWindowControls() {
   SetCheckboxChecked(settings_capture_files_check_, settings_.ignore.capture_files);
 
   SetComboSelection(settings_hotkey_key_combo_, PopupHotKeyComboIndex(settings_.popup_hotkey_virtual_key));
-  SetComboSelection(
-      settings_double_click_modifier_combo_,
-      DoubleClickModifierComboIndex(settings_.double_click_modifier_key));
+  SetSettingsDoubleClickModifierSelection(settings_.double_click_modifier_key);
   SetComboSelection(settings_search_mode_combo_, SearchModeComboIndex(settings_.search_mode));
   SetComboSelection(settings_sort_order_combo_, SortOrderComboIndex(settings_.sort_order));
   SetComboSelection(settings_pin_position_combo_, PinPositionComboIndex(settings_.pin_position));
   SetComboSelection(settings_history_limit_combo_, HistoryLimitComboIndex(settings_.max_history_items));
 
-  if (settings_double_click_modifier_combo_ != nullptr) {
-    EnableWindow(settings_double_click_modifier_combo_, settings_.double_click_popup_enabled ? TRUE : FALSE);
+  if (settings_double_click_modifier_input_ != nullptr) {
+    EnableWindow(settings_double_click_modifier_input_, settings_.double_click_popup_enabled ? TRUE : FALSE);
+    SetSettingsDoubleClickModifierSelection(settings_.double_click_modifier_key);
   }
 
   const std::wstring ignored_apps = JoinMultilineText(settings_.ignore.ignored_applications);
@@ -2331,6 +2340,10 @@ void Win32App::ActivateSelectedItem() {
 }
 
 void Win32App::HandleGlobalKeyDown(DWORD virtual_key) {
+  if (settings_window_ != nullptr && IsWindowVisible(settings_window_) != FALSE) {
+    return;
+  }
+
   const std::uint32_t modifier_flag = ModifierFlagsForVirtualKey(virtual_key);
   if (modifier_flag != 0) {
     if ((active_double_click_modifier_flags_ & modifier_flag) == 0) {
@@ -2344,6 +2357,10 @@ void Win32App::HandleGlobalKeyDown(DWORD virtual_key) {
 }
 
 void Win32App::HandleGlobalKeyUp(DWORD virtual_key) {
+  if (settings_window_ != nullptr && IsWindowVisible(settings_window_) != FALSE) {
+    return;
+  }
+
   const std::uint32_t modifier_flag = ModifierFlagsForVirtualKey(virtual_key);
   if (modifier_flag == 0) {
     return;
@@ -2932,6 +2949,26 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
         apply_font(target);
       };
 
+      const auto create_readonly_input = [&](HWND parent, HWND& target, int x, int y, int width) {
+        target = CreateWindowExW(
+            WS_EX_CLIENTEDGE,
+            L"EDIT",
+            nullptr,
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_READONLY,
+            x,
+            y,
+            width,
+            24,
+            parent,
+            nullptr,
+            instance_,
+            nullptr);
+        apply_font(target);
+        if (target != nullptr) {
+          SendMessageW(target, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
+        }
+      };
+
       const auto create_multiline_edit =
           [&](HWND parent, HWND& target, int x, int y, int width, int height) {
             target = CreateWindowExW(
@@ -3038,7 +3075,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           110,
           18,
           UiText(zh, L"Modifier key", L"修饰键"));
-      create_combo(settings_general_page_, settings_double_click_modifier_combo_, page_padding + 132, 140, 180);
+      create_readonly_input(settings_general_page_, settings_double_click_modifier_input_, page_padding + 132, 140, 220);
       create_label(
           settings_general_page_,
           page_padding + 16,
@@ -3047,8 +3084,8 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           36,
           UiText(
               zh,
-              L"When enabled with a selected modifier, double-press that modifier to toggle clipboard history. Otherwise the regular hotkey remains active.",
-              L"启用后，若已选择修饰键，连按两次该修饰键即可切换剪贴板历史弹窗；未选择时仍使用普通快捷键。"));
+              L"When enabled, click the field and press Ctrl, Alt, or Shift to record it. Double-press that modifier to toggle clipboard history. Press Delete or Backspace to clear it.",
+              L"启用后，点击输入框并按下 Ctrl、Alt 或 Shift 完成录入。之后连按两次该修饰键即可切换剪贴板历史弹窗。按 Delete 或 Backspace 可清除。"));
 
       create_group(settings_general_page_, page_padding, 218, content_width, 172, UiText(zh, L"Behavior", L"行为"));
       int general_y = 242;
@@ -3309,10 +3346,6 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       for (const auto& choice : kPopupHotKeyChoices) {
         AddComboItem(settings_hotkey_key_combo_, PopupHotKeyLabel(zh, choice.virtual_key));
       }
-      AddComboItem(settings_double_click_modifier_combo_, DoubleClickModifierLabel(zh, DoubleClickModifierKey::kNone));
-      AddComboItem(settings_double_click_modifier_combo_, DoubleClickModifierLabel(zh, DoubleClickModifierKey::kAlt));
-      AddComboItem(settings_double_click_modifier_combo_, DoubleClickModifierLabel(zh, DoubleClickModifierKey::kShift));
-      AddComboItem(settings_double_click_modifier_combo_, DoubleClickModifierLabel(zh, DoubleClickModifierKey::kControl));
       AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kMixed));
       AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kExact));
       AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kFuzzy));
@@ -3372,6 +3405,14 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           nullptr);
       apply_font(close_button);
 
+      if (settings_double_click_modifier_input_ != nullptr) {
+        SetWindowLongPtrW(settings_double_click_modifier_input_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+        original_settings_double_click_modifier_proc_ = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(
+            settings_double_click_modifier_input_,
+            GWLP_WNDPROC,
+            reinterpret_cast<LONG_PTR>(StaticSettingsDoubleClickModifierProc)));
+      }
+
       TabCtrl_SetCurSel(settings_tab_, 0);
       ShowSettingsPage(0);
       SyncSettingsWindowControls();
@@ -3387,10 +3428,14 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
     }
     case WM_COMMAND:
       if (reinterpret_cast<HWND>(lparam) == settings_double_click_open_check_ && HIWORD(wparam) == BN_CLICKED) {
-        if (settings_double_click_modifier_combo_ != nullptr) {
+        if (settings_double_click_modifier_input_ != nullptr) {
           EnableWindow(
-              settings_double_click_modifier_combo_,
+              settings_double_click_modifier_input_,
               IsCheckboxChecked(settings_double_click_open_check_) ? TRUE : FALSE);
+          SetSettingsDoubleClickModifierSelection(settings_double_click_modifier_selection_);
+          if (IsCheckboxChecked(settings_double_click_open_check_)) {
+            SetFocus(settings_double_click_modifier_input_);
+          }
         }
         return 0;
       }
@@ -3429,7 +3474,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       settings_plain_text_check_ = nullptr;
       settings_start_on_login_check_ = nullptr;
       settings_double_click_open_check_ = nullptr;
-      settings_double_click_modifier_combo_ = nullptr;
+      settings_double_click_modifier_input_ = nullptr;
       settings_hotkey_ctrl_check_ = nullptr;
       settings_hotkey_alt_check_ = nullptr;
       settings_hotkey_shift_check_ = nullptr;
@@ -3456,12 +3501,48 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       settings_allowed_apps_edit_ = nullptr;
       settings_ignored_patterns_edit_ = nullptr;
       settings_ignored_formats_edit_ = nullptr;
+      original_settings_double_click_modifier_proc_ = nullptr;
       return 0;
     default:
       break;
   }
 
   return DefWindowProcW(window, message, wparam, lparam);
+}
+
+LRESULT Win32App::HandleSettingsDoubleClickModifierMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  switch (message) {
+    case WM_GETDLGCODE:
+      break;
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN: {
+      if (const auto key = DoubleClickModifierKeyFromVirtualKey(static_cast<DWORD>(wparam));
+          key != DoubleClickModifierKey::kNone) {
+        SetSettingsDoubleClickModifierSelection(key);
+        return 0;
+      }
+
+      switch (wparam) {
+        case VK_DELETE:
+        case VK_BACK:
+        case VK_ESCAPE:
+          SetSettingsDoubleClickModifierSelection(DoubleClickModifierKey::kNone);
+          return 0;
+        default:
+          break;
+      }
+      break;
+    }
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+    case WM_CHAR:
+    case WM_SYSCHAR:
+      return 0;
+    default:
+      break;
+  }
+
+  return CallWindowProcW(original_settings_double_click_modifier_proc_, window, message, wparam, lparam);
 }
 
 LRESULT CALLBACK Win32App::StaticControllerWindowProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -3531,6 +3612,14 @@ LRESULT CALLBACK Win32App::StaticSettingsWindowProc(HWND window, UINT message, W
 
   if (auto* self = FromWindowUserData(window); self != nullptr) {
     return self->HandleSettingsWindowMessage(window, message, wparam, lparam);
+  }
+
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+LRESULT CALLBACK Win32App::StaticSettingsDoubleClickModifierProc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
+  if (auto* self = FromWindowUserData(window); self != nullptr) {
+    return self->HandleSettingsDoubleClickModifierMessage(window, message, wparam, lparam);
   }
 
   return DefWindowProcW(window, message, wparam, lparam);
