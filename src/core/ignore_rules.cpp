@@ -116,7 +116,8 @@ IgnoreDecision ApplyIgnoreRules(const AppSettings& settings, HistoryItem item) {
   }
 
   const auto& source_application = decision.item.metadata.source_application;
-  if (!settings.ignore.allowed_applications.empty() &&
+  if (settings.ignore.only_listed_applications &&
+      !settings.ignore.allowed_applications.empty() &&
       !MatchesListValue(settings.ignore.allowed_applications, source_application)) {
     decision.reason = IgnoreReason::kNotAllowedApplication;
     return decision;

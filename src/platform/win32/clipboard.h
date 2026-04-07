@@ -16,6 +16,7 @@ namespace maccy::win32 {
 [[nodiscard]] std::optional<std::string> ReadPlainText(HWND owner);
 [[nodiscard]] bool WriteHistoryItem(HWND owner, const HistoryItem& item, bool plain_text_only = false);
 [[nodiscard]] bool WritePlainText(HWND owner, std::string_view text);
+[[nodiscard]] bool ClearClipboard(HWND owner);
 [[nodiscard]] std::string BuildHistoryTitleFromText(std::string_view text, std::size_t max_length = 80);
 
 }  // namespace maccy::win32

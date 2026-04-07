@@ -23,7 +23,6 @@ The current build is already usable on Windows and includes:
 
 Still missing or incomplete:
 
-- configurable global hotkey UI
 - image preview zoom
 - double-tap modifier activation
 - OCR, updater, scripting interface, and richer diagnostics
@@ -32,7 +31,7 @@ Still missing or incomplete:
 
 1. Launch `maccy_win.exe`.
 2. Look for the app in the Windows notification area tray.
-3. Open clipboard history with `Ctrl+Shift+C`.
+3. Open clipboard history with the configured global hotkey. The default is `Ctrl+Shift+C`.
 4. If that hotkey is busy, click the tray icon instead.
 5. Copy text, images, files, or rich text as usual with `Ctrl+C`.
 6. Open the popup and search or browse your saved history.
@@ -42,7 +41,7 @@ By default, selecting an item also auto-pastes it back into the previous window.
 
 ## Keyboard Shortcuts
 
-- `Ctrl+Shift+C`: open the history popup
+- configured global hotkey: open the history popup
 - `Up` / `Down`: move through the list
 - `Enter`: activate the selected item
 - `Esc`: close the popup
@@ -54,7 +53,7 @@ By default, selecting an item also auto-pastes it back into the previous window.
 
 ## Settings
 
-Settings are available from both a dedicated settings window and the tray menu.
+Settings are available from both a dedicated tabbed settings window and the tray menu.
 
 To open settings:
 
@@ -66,44 +65,35 @@ You can still use the grouped tray menu sections for quick toggles.
 Available settings today:
 
 - `General`
-  - `Enable clipboard capture`
-  - `Auto Paste`
-  - `Paste Plain Text`
-  - `Start on Login`
-  - `Show Search`
-  - `Show Preview`
-  - `Remember Position`
-  - `Show startup guide`
-- `Search Mode`
-  - `Mixed`
-  - `Exact`
-  - `Fuzzy`
-  - `Regexp`
-- `Sort By`
-  - `Last Copied`
-  - `First Copied`
-  - `Copy Count`
+  - configurable global open hotkey
+  - enable clipboard capture
+  - auto paste
+  - paste plain text
+  - start on login
+  - startup guide
+  - search mode
+- `Storage`
+  - history limit
+  - sort order
+  - save plain text / HTML / rich text / images / file lists
+- `Appearance`
+  - show search field
+  - show preview pane
+  - remember popup position
+  - pins on top / bottom
 - `Pins`
-  - `Pins on Top`
-  - `Pins on Bottom`
-- `History Limit`
-  - `50`
-  - `100`
-  - `200`
-  - `500`
-- `Capture Types`
-  - `Ignore All`
-  - `Text`
-  - `HTML`
-  - `Rich Text`
-  - `Images`
-  - `Files`
-- ignore rules editors
+  - quick reference for pin management shortcuts in the popup
+- `Ignore`
+  - ignore all captures
+  - only capture listed applications
   - ignored applications
   - allowed applications
   - ignored text patterns
   - ignored content formats
-- direct actions
+- `Advanced`
+  - clear unpinned history on exit
+  - clear system clipboard on exit
+- tray quick actions
   - `Show History`
   - `Pause Capture`
   - `Ignore Next Copy`

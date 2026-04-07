@@ -121,6 +121,14 @@ int ParseInt(std::string_view value) {
   }
 }
 
+std::uint32_t ParseUInt32(std::string_view value) {
+  try {
+    return static_cast<std::uint32_t>(std::stoul(std::string(value)));
+  } catch (...) {
+    return 0;
+  }
+}
+
 std::string_view ToString(PinPosition position) {
   switch (position) {
     case PinPosition::kTop:
@@ -205,11 +213,15 @@ bool SaveSettingsFile(
   write_line("pin_position", std::string(ToString(settings.pin_position)));
   write_line("sort_order", std::string(ToString(settings.sort_order)));
   write_line("search_mode", std::string(ToString(settings.search_mode)));
+  write_line("popup_hotkey_modifiers", std::to_string(settings.popup_hotkey_modifiers));
+  write_line("popup_hotkey_virtual_key", std::to_string(settings.popup_hotkey_virtual_key));
   write_line("show_startup_guide", settings.show_startup_guide ? "1" : "0");
   write_line("capture_enabled", settings.capture_enabled ? "1" : "0");
   write_line("auto_paste", settings.auto_paste ? "1" : "0");
   write_line("paste_plain_text", settings.paste_plain_text ? "1" : "0");
   write_line("start_on_login", settings.start_on_login ? "1" : "0");
+  write_line("clear_history_on_exit", settings.clear_history_on_exit ? "1" : "0");
+  write_line("clear_system_clipboard_on_exit", settings.clear_system_clipboard_on_exit ? "1" : "0");
   write_line("show_search", settings.popup.show_search ? "1" : "0");
   write_line("show_preview", settings.popup.show_preview ? "1" : "0");
   write_line("remember_last_position", settings.popup.remember_last_position ? "1" : "0");
@@ -220,6 +232,7 @@ bool SaveSettingsFile(
   write_line("popup_height", std::to_string(settings.popup.height));
   write_line("preview_width", std::to_string(settings.popup.preview_width));
   write_line("ignore_all", settings.ignore.ignore_all ? "1" : "0");
+  write_line("only_listed_applications", settings.ignore.only_listed_applications ? "1" : "0");
   write_line("capture_text", settings.ignore.capture_text ? "1" : "0");
   write_line("capture_html", settings.ignore.capture_html ? "1" : "0");
   write_line("capture_rtf", settings.ignore.capture_rtf ? "1" : "0");
@@ -244,6 +257,7 @@ bool SaveSettingsFile(
 
 AppSettings LoadSettingsFile(const std::filesystem::path& path) {
   AppSettings settings;
+  bool loaded_only_listed_applications = false;
 
   std::ifstream input(path, std::ios::binary);
   if (!input.is_open()) {
@@ -277,6 +291,10 @@ AppSettings LoadSettingsFile(const std::filesystem::path& path) {
       settings.sort_order = ParseHistorySortOrder(value);
     } else if (fields[0] == "search_mode") {
       settings.search_mode = ParseSearchMode(value);
+    } else if (fields[0] == "popup_hotkey_modifiers") {
+      settings.popup_hotkey_modifiers = ParseUInt32(value);
+    } else if (fields[0] == "popup_hotkey_virtual_key") {
+      settings.popup_hotkey_virtual_key = ParseUInt32(value);
     } else if (fields[0] == "show_startup_guide") {
       settings.show_startup_guide = ParseBool(value);
     } else if (fields[0] == "capture_enabled") {
@@ -287,6 +305,10 @@ AppSettings LoadSettingsFile(const std::filesystem::path& path) {
       settings.paste_plain_text = ParseBool(value);
     } else if (fields[0] == "start_on_login") {
       settings.start_on_login = ParseBool(value);
+    } else if (fields[0] == "clear_history_on_exit") {
+      settings.clear_history_on_exit = ParseBool(value);
+    } else if (fields[0] == "clear_system_clipboard_on_exit") {
+      settings.clear_system_clipboard_on_exit = ParseBool(value);
     } else if (fields[0] == "show_search") {
       settings.popup.show_search = ParseBool(value);
     } else if (fields[0] == "show_preview") {
@@ -307,6 +329,9 @@ AppSettings LoadSettingsFile(const std::filesystem::path& path) {
       settings.popup.preview_width = ParseInt(value);
     } else if (fields[0] == "ignore_all") {
       settings.ignore.ignore_all = ParseBool(value);
+    } else if (fields[0] == "only_listed_applications") {
+      settings.ignore.only_listed_applications = ParseBool(value);
+      loaded_only_listed_applications = true;
     } else if (fields[0] == "capture_text") {
       settings.ignore.capture_text = ParseBool(value);
     } else if (fields[0] == "capture_html") {
@@ -326,6 +351,10 @@ AppSettings LoadSettingsFile(const std::filesystem::path& path) {
     } else if (fields[0] == "ignored_format") {
       settings.ignore.ignored_formats.push_back(value);
     }
+  }
+
+  if (!loaded_only_listed_applications && !settings.ignore.allowed_applications.empty()) {
+    settings.ignore.only_listed_applications = true;
   }
 
   ClampPopupSettings(settings.popup);

@@ -30,6 +30,7 @@ int main() {
 
   {
     maccy::AppSettings settings;
+    settings.ignore.only_listed_applications = true;
     settings.ignore.allowed_applications = {"Code.exe"};
 
     const auto blocked = maccy::ApplyIgnoreRules(settings, MakeItem("Title", "content", "Notepad.exe"));
@@ -38,6 +39,14 @@ int main() {
 
     const auto allowed = maccy::ApplyIgnoreRules(settings, MakeItem("Title", "content", "Code.exe"));
     assert(allowed.should_store);
+  }
+
+  {
+    maccy::AppSettings settings;
+    settings.ignore.allowed_applications = {"Code.exe"};
+
+    const auto decision = maccy::ApplyIgnoreRules(settings, MakeItem("Title", "content", "Notepad.exe"));
+    assert(decision.should_store);
   }
 
   {

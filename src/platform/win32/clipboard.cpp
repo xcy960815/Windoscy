@@ -572,6 +572,16 @@ bool WritePlainText(HWND owner, std::string_view text) {
   return wrote;
 }
 
+bool ClearClipboard(HWND owner) {
+  if (OpenClipboard(owner) == FALSE) {
+    return false;
+  }
+
+  const bool cleared = EmptyClipboard() != FALSE;
+  CloseClipboard();
+  return cleared;
+}
+
 std::string BuildHistoryTitleFromText(std::string_view text, std::size_t max_length) {
   return BuildAutomaticTitle(text, max_length);
 }

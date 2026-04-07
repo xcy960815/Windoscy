@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@ namespace maccy {
 
 struct IgnoreRules {
   bool ignore_all = false;
+  bool only_listed_applications = false;
   bool capture_text = true;
   bool capture_html = true;
   bool capture_rtf = true;
@@ -40,11 +42,15 @@ struct AppSettings {
   PinPosition pin_position = PinPosition::kTop;
   HistorySortOrder sort_order = HistorySortOrder::kLastCopied;
   SearchMode search_mode = SearchMode::kMixed;
+  std::uint32_t popup_hotkey_modifiers = 0x0006;
+  std::uint32_t popup_hotkey_virtual_key = 'C';
   bool show_startup_guide = true;
   bool capture_enabled = true;
   bool auto_paste = true;
   bool paste_plain_text = false;
   bool start_on_login = false;
+  bool clear_history_on_exit = false;
+  bool clear_system_clipboard_on_exit = false;
   PopupSettings popup;
   IgnoreRules ignore;
 };
