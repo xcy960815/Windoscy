@@ -2006,7 +2006,7 @@ void Win32App::SyncSettingsWindowControls() {
   SetComboSelection(settings_history_limit_combo_, HistoryLimitComboIndex(settings_.max_history_items));
 
   if (settings_double_click_modifier_input_ != nullptr) {
-    EnableWindow(settings_double_click_modifier_input_, settings_.double_click_popup_enabled ? TRUE : FALSE);
+    EnableWindow(settings_double_click_modifier_input_, TRUE);
     SetSettingsDoubleClickModifierSelection(settings_.double_click_modifier_key);
   }
 
@@ -3779,9 +3779,6 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
     case WM_COMMAND:
       if (reinterpret_cast<HWND>(lparam) == settings_double_click_open_check_ && HIWORD(wparam) == BN_CLICKED) {
         if (settings_double_click_modifier_input_ != nullptr) {
-          EnableWindow(
-              settings_double_click_modifier_input_,
-              IsCheckboxChecked(settings_double_click_open_check_) ? TRUE : FALSE);
           SetSettingsDoubleClickModifierSelection(settings_double_click_modifier_selection_);
           if (IsCheckboxChecked(settings_double_click_open_check_)) {
             SetFocus(settings_double_click_modifier_input_);
