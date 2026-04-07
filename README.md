@@ -2,7 +2,7 @@
 
 ClipLoom is a Windows-native clipboard manager focused on fast search, reliable history, and keyboard-first workflows.
 
-中文文档请看：[docs/项目说明-中文.md](docs/%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E-%E4%B8%AD%E6%96%87.md)
+中文文档请看：[README-CN.md](README-CN.md)
 
 ## Overview
 
@@ -140,7 +140,7 @@ CI workflows:
 
 ## Documentation
 
-- `docs/项目说明-中文.md`
+- `README-CN.md`
 - `docs/windows-maccy-clone-todolist.md`
 - `docs/tech-stack-decision.md`
 - `docs/ui-upgrade-options.md`
