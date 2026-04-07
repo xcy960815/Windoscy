@@ -191,6 +191,7 @@ class Win32App {
   HistoryStore store_;
   std::uint64_t pin_editor_item_id_ = 0;
   bool pin_editor_rename_only_ = false;
+  bool use_chinese_ui_ = false;
 };
 
 }  // namespace maccy

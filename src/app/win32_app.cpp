@@ -139,21 +139,29 @@ std::filesystem::path ResolveAppDataDirectory() {
   return std::filesystem::current_path() / "MaccyWindows";
 }
 
-std::wstring BuildTrayTooltip(bool capture_enabled, const HistoryStore& store) {
-  std::string tooltip = "Maccy Windows";
+bool ShouldUseChineseUi() {
+  return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_CHINESE;
+}
+
+const wchar_t* UiText(bool use_chinese_ui, const wchar_t* english, const wchar_t* chinese) {
+  return use_chinese_ui ? chinese : english;
+}
+
+std::wstring BuildTrayTooltip(bool use_chinese_ui, bool capture_enabled, const HistoryStore& store) {
+  std::wstring tooltip = L"Maccy Windows";
   if (!capture_enabled) {
-    tooltip += " (Paused)";
+    tooltip += UiText(use_chinese_ui, L" (Paused)", L"（已暂停）");
   } else if (!store.items().empty()) {
-    tooltip += " - ";
-    tooltip += store.items().front().PreferredDisplayText();
+    tooltip += L" - ";
+    tooltip += win32::Utf8ToWide(store.items().front().PreferredDisplayText());
   }
 
   if (tooltip.size() > 100) {
     tooltip.resize(100);
-    tooltip += "...";
+    tooltip += L"...";
   }
 
-  return win32::Utf8ToWide(tooltip);
+  return tooltip;
 }
 
 UINT TrayNotifyCode(LPARAM lparam) {
@@ -168,53 +176,133 @@ POINT TrayAnchorPoint(WPARAM wparam) {
   return point;
 }
 
-std::string JoinContentFormats(const HistoryItem& item) {
-  std::string joined;
+const wchar_t* PopupHotKeyLabel(bool use_chinese_ui, std::uint32_t virtual_key) {
+  for (const auto& choice : kPopupHotKeyChoices) {
+    if (choice.virtual_key == virtual_key) {
+      if (virtual_key == VK_SPACE) {
+        return UiText(use_chinese_ui, L"Space", L"空格");
+      }
+      return choice.label;
+    }
+  }
+
+  return UiText(use_chinese_ui, L"Unknown", L"未知");
+}
+
+const wchar_t* SearchModeLabel(bool use_chinese_ui, SearchMode mode) {
+  switch (mode) {
+    case SearchMode::kMixed:
+      return UiText(use_chinese_ui, L"Mixed", L"混合");
+    case SearchMode::kExact:
+      return UiText(use_chinese_ui, L"Exact", L"精确");
+    case SearchMode::kFuzzy:
+      return UiText(use_chinese_ui, L"Fuzzy", L"模糊");
+    case SearchMode::kRegexp:
+      return UiText(use_chinese_ui, L"Regexp", L"正则");
+  }
+
+  return UiText(use_chinese_ui, L"Mixed", L"混合");
+}
+
+const wchar_t* SortOrderLabel(bool use_chinese_ui, HistorySortOrder order) {
+  switch (order) {
+    case HistorySortOrder::kLastCopied:
+      return UiText(use_chinese_ui, L"Last Copied", L"最近复制");
+    case HistorySortOrder::kFirstCopied:
+      return UiText(use_chinese_ui, L"First Copied", L"最早复制");
+    case HistorySortOrder::kCopyCount:
+      return UiText(use_chinese_ui, L"Copy Count", L"复制次数");
+  }
+
+  return UiText(use_chinese_ui, L"Last Copied", L"最近复制");
+}
+
+const wchar_t* PinPositionLabel(bool use_chinese_ui, PinPosition position) {
+  switch (position) {
+    case PinPosition::kTop:
+      return UiText(use_chinese_ui, L"Pins on Top", L"置顶项在上");
+    case PinPosition::kBottom:
+      return UiText(use_chinese_ui, L"Pins on Bottom", L"置顶项在下");
+  }
+
+  return UiText(use_chinese_ui, L"Pins on Top", L"置顶项在上");
+}
+
+const wchar_t* LocalizedContentFormatName(bool use_chinese_ui, ContentFormat format) {
+  switch (format) {
+    case ContentFormat::kPlainText:
+      return UiText(use_chinese_ui, L"Plain Text", L"文本");
+    case ContentFormat::kHtml:
+      return L"HTML";
+    case ContentFormat::kRtf:
+      return UiText(use_chinese_ui, L"Rich Text", L"富文本");
+    case ContentFormat::kImage:
+      return UiText(use_chinese_ui, L"Image", L"图像");
+    case ContentFormat::kFileList:
+      return UiText(use_chinese_ui, L"Files", L"文件");
+    case ContentFormat::kCustom:
+      return UiText(use_chinese_ui, L"Custom", L"自定义");
+  }
+
+  return UiText(use_chinese_ui, L"Custom", L"自定义");
+}
+
+std::wstring JoinContentFormats(bool use_chinese_ui, const HistoryItem& item) {
+  std::wstring joined;
 
   for (const auto& content : item.contents) {
     if (!joined.empty()) {
-      joined += ", ";
+      joined += L", ";
     }
 
-    joined += ContentFormatName(content.format);
+    joined += LocalizedContentFormatName(use_chinese_ui, content.format);
     if (!content.format_name.empty()) {
-      joined += ':';
-      joined += content.format_name;
+      joined += L':';
+      joined += win32::Utf8ToWide(content.format_name);
     }
   }
 
   return joined;
 }
 
-std::string BuildPreviewBody(const HistoryItem& item) {
+std::wstring BuildPreviewBody(bool use_chinese_ui, const HistoryItem& item) {
   if (const auto text = item.PreferredContentText(); !text.empty()) {
-    return text;
+    return win32::Utf8ToWide(text);
   }
 
   for (const auto& content : item.contents) {
     if (content.format == ContentFormat::kImage) {
-      return "[Binary image payload: " + std::to_string(content.text_payload.size()) + " bytes]";
+      return std::wstring(UiText(use_chinese_ui, L"[Binary image payload: ", L"[二进制图像数据：")) +
+             std::to_wstring(content.text_payload.size()) +
+             UiText(use_chinese_ui, L" bytes]", L" 字节]");
     }
   }
 
-  return item.PreferredDisplayText();
+  return win32::Utf8ToWide(item.PreferredDisplayText());
 }
 
-std::string BuildPreviewText(const HistoryItem& item) {
-  std::ostringstream preview;
-  preview << "Title: " << item.PreferredDisplayText() << "\r\n";
-  preview << "Source App: " << (item.metadata.source_application.empty() ? "Unknown" : item.metadata.source_application)
-          << "\r\n";
-  preview << "Copy Count: " << item.metadata.copy_count << "\r\n";
-  preview << "First Seen Tick: " << item.metadata.first_copied_at << "\r\n";
-  preview << "Last Seen Tick: " << item.metadata.last_copied_at << "\r\n";
-  preview << "Pinned: " << (item.pinned ? "Yes" : "No");
+std::wstring BuildPreviewText(bool use_chinese_ui, const HistoryItem& item) {
+  const std::wstring source_application = item.metadata.source_application.empty()
+                                              ? std::wstring(UiText(use_chinese_ui, L"Unknown", L"未知"))
+                                              : win32::Utf8ToWide(item.metadata.source_application);
+  const wchar_t* pinned_text = UiText(use_chinese_ui, item.pinned ? L"Yes" : L"No", item.pinned ? L"是" : L"否");
+  std::wostringstream preview;
+  preview << UiText(use_chinese_ui, L"Title: ", L"标题：") << win32::Utf8ToWide(item.PreferredDisplayText())
+          << L"\r\n";
+  preview << UiText(use_chinese_ui, L"Source App: ", L"来源应用：") << source_application << L"\r\n";
+  preview << UiText(use_chinese_ui, L"Copy Count: ", L"复制次数：") << item.metadata.copy_count << L"\r\n";
+  preview << UiText(use_chinese_ui, L"First Seen Tick: ", L"首次记录时间戳：") << item.metadata.first_copied_at
+          << L"\r\n";
+  preview << UiText(use_chinese_ui, L"Last Seen Tick: ", L"最近记录时间戳：") << item.metadata.last_copied_at
+          << L"\r\n";
+  preview << UiText(use_chinese_ui, L"Pinned: ", L"已置顶：") << pinned_text;
   if (item.pin_key.has_value()) {
-    preview << " (" << *item.pin_key << ")";
+    preview << L" (" << static_cast<wchar_t>(*item.pin_key) << L")";
   }
-  preview << "\r\n";
-  preview << "Formats: " << JoinContentFormats(item) << "\r\n\r\n";
-  preview << BuildPreviewBody(item);
+  preview << L"\r\n";
+  preview << UiText(use_chinese_ui, L"Formats: ", L"内容格式：") << JoinContentFormats(use_chinese_ui, item)
+          << L"\r\n\r\n";
+  preview << BuildPreviewBody(use_chinese_ui, item);
   return preview.str();
 }
 
@@ -482,16 +570,6 @@ std::vector<std::string> SplitMultilineText(const std::wstring& text) {
   return lines;
 }
 
-const wchar_t* PopupHotKeyLabel(std::uint32_t virtual_key) {
-  for (const auto& choice : kPopupHotKeyChoices) {
-    if (choice.virtual_key == virtual_key) {
-      return choice.label;
-    }
-  }
-
-  return L"Unknown";
-}
-
 int PopupHotKeyComboIndex(std::uint32_t virtual_key) {
   for (int index = 0; index < static_cast<int>(sizeof(kPopupHotKeyChoices) / sizeof(kPopupHotKeyChoices[0])); ++index) {
     if (kPopupHotKeyChoices[index].virtual_key == virtual_key) {
@@ -515,7 +593,7 @@ bool IsValidPopupHotKey(std::uint32_t modifiers, std::uint32_t virtual_key) {
   return virtual_key != 0 && (modifiers & 0x000F) != 0;
 }
 
-std::wstring FormatPopupHotKey(std::uint32_t modifiers, std::uint32_t virtual_key) {
+std::wstring FormatPopupHotKey(bool use_chinese_ui, std::uint32_t modifiers, std::uint32_t virtual_key) {
   std::wstring text;
 
   if ((modifiers & kHotKeyModControl) != 0) {
@@ -531,7 +609,7 @@ std::wstring FormatPopupHotKey(std::uint32_t modifiers, std::uint32_t virtual_ke
     text += L"Win+";
   }
 
-  text += PopupHotKeyLabel(virtual_key);
+  text += PopupHotKeyLabel(use_chinese_ui, virtual_key);
   return text;
 }
 
@@ -628,6 +706,7 @@ bool Win32App::AcquireSingleInstance() {
 
 bool Win32App::Initialize(HINSTANCE instance) {
   instance_ = instance;
+  use_chinese_ui_ = ShouldUseChineseUi();
   INITCOMMONCONTROLSEX common_controls{};
   common_controls.dwSize = sizeof(common_controls);
   common_controls.dwICC = ICC_TAB_CLASSES;
@@ -653,7 +732,10 @@ bool Win32App::Initialize(HINSTANCE instance) {
   if (!SetupTrayIcon()) {
     ShowDialog(
         controller_window_,
-        L"Couldn't create the notification area icon. Maccy Windows can't be used without the tray icon.",
+        UiText(
+            use_chinese_ui_,
+            L"Couldn't create the notification area icon. Maccy Windows can't be used without the tray icon.",
+            L"无法创建通知区域图标。缺少托盘图标时，Maccy Windows 无法使用。"),
         MB_ICONERROR);
     return false;
   }
@@ -661,10 +743,13 @@ bool Win32App::Initialize(HINSTANCE instance) {
   toggle_hotkey_registered_ = RegisterToggleHotKey();
   if (!toggle_hotkey_registered_) {
     const std::wstring hotkey_text =
-        FormatPopupHotKey(settings_.popup_hotkey_modifiers, settings_.popup_hotkey_virtual_key);
+        FormatPopupHotKey(use_chinese_ui_, settings_.popup_hotkey_modifiers, settings_.popup_hotkey_virtual_key);
     const std::wstring warning =
-        std::wstring(L"Couldn't register the global hotkey ") + hotkey_text + L".\n\n"
-        L"Maccy Windows is still running. Open it from the tray icon in the notification area instead.";
+        std::wstring(UiText(use_chinese_ui_, L"Couldn't register the global hotkey ", L"无法注册全局快捷键 ")) +
+        hotkey_text + UiText(
+                          use_chinese_ui_,
+                          L".\n\nMaccy Windows is still running. Open it from the tray icon in the notification area instead.",
+                          L"。\n\nMaccy Windows 仍在后台运行。请改为通过通知区域托盘图标打开。");
     ShowDialog(
         controller_window_,
         warning,
@@ -841,7 +926,7 @@ bool Win32App::SetupTrayIcon() {
   icon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
   icon.uCallbackMessage = kTrayMessage;
   icon.hIcon = LoadSmallAppIcon(instance_);
-  const auto tooltip = BuildTrayTooltip(capture_enabled_, store_);
+  const auto tooltip = BuildTrayTooltip(use_chinese_ui_, capture_enabled_, store_);
   lstrcpynW(icon.szTip, tooltip.c_str(), ARRAYSIZE(icon.szTip));
 
   const bool added = Shell_NotifyIconW(NIM_ADD, &icon) != FALSE;
@@ -875,6 +960,7 @@ void Win32App::UnregisterToggleHotKey() {
 
 void Win32App::ShowTrayMenu(const POINT* anchor) {
   bool settings_changed = false;
+  const bool zh = use_chinese_ui_;
 
   HMENU menu = CreatePopupMenu();
   if (menu == nullptr) {
@@ -889,23 +975,27 @@ void Win32App::ShowTrayMenu(const POINT* anchor) {
   HMENU appearance_menu = CreatePopupMenu();
   HMENU capture_menu = CreatePopupMenu();
 
-  AppendMenuW(menu, MF_STRING, kMenuSettings, L"Settings...");
+  AppendMenuW(menu, MF_STRING, kMenuSettings, UiText(zh, L"Settings...", L"设置..."));
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kMenuShowHistory, L"Show History");
-  AppendMenuW(menu, MF_STRING | (capture_enabled_ ? MF_UNCHECKED : MF_CHECKED), kMenuPauseCapture, L"Pause Capture");
-  AppendMenuW(menu, MF_STRING, kMenuIgnoreNextCopy, L"Ignore Next Copy");
+  AppendMenuW(menu, MF_STRING, kMenuShowHistory, UiText(zh, L"Show History", L"显示历史"));
+  AppendMenuW(
+      menu,
+      MF_STRING | (capture_enabled_ ? MF_UNCHECKED : MF_CHECKED),
+      kMenuPauseCapture,
+      UiText(zh, L"Pause Capture", L"暂停捕获"));
+  AppendMenuW(menu, MF_STRING, kMenuIgnoreNextCopy, UiText(zh, L"Ignore Next Copy", L"忽略下一次复制"));
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
 
   AppendMenuW(
       capture_menu,
       MF_STRING | (settings_.ignore.ignore_all ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleIgnoreAll,
-      L"Ignore All");
+      UiText(zh, L"Ignore All", L"全部忽略"));
   AppendMenuW(
       capture_menu,
       MF_STRING | (settings_.ignore.capture_text ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleCaptureText,
-      L"Text");
+      UiText(zh, L"Text", L"文本"));
   AppendMenuW(
       capture_menu,
       MF_STRING | (settings_.ignore.capture_html ? MF_CHECKED : MF_UNCHECKED),
@@ -915,103 +1005,103 @@ void Win32App::ShowTrayMenu(const POINT* anchor) {
       capture_menu,
       MF_STRING | (settings_.ignore.capture_rtf ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleCaptureRtf,
-      L"Rich Text");
+      UiText(zh, L"Rich Text", L"富文本"));
   AppendMenuW(
       capture_menu,
       MF_STRING | (settings_.ignore.capture_images ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleCaptureImages,
-      L"Images");
+      UiText(zh, L"Images", L"图像"));
   AppendMenuW(
       capture_menu,
       MF_STRING | (settings_.ignore.capture_files ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleCaptureFiles,
-      L"Files");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(capture_menu), L"Capture Types");
+      UiText(zh, L"Files", L"文件"));
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(capture_menu), UiText(zh, L"Capture Types", L"捕获类型"));
 
   AppendMenuW(
       behavior_menu,
       MF_STRING | (settings_.auto_paste ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleAutoPaste,
-      L"Auto Paste");
+      UiText(zh, L"Auto Paste", L"选择后自动粘贴"));
   AppendMenuW(
       behavior_menu,
       MF_STRING | (settings_.paste_plain_text ? MF_CHECKED : MF_UNCHECKED),
       kMenuTogglePlainTextPaste,
-      L"Paste Plain Text");
+      UiText(zh, L"Paste Plain Text", L"粘贴为纯文本"));
   AppendMenuW(
       behavior_menu,
       MF_STRING | (settings_.start_on_login ? MF_CHECKED : MF_UNCHECKED),
       kMenuStartOnLogin,
-      L"Start on Login");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(behavior_menu), L"Behavior");
+      UiText(zh, L"Start on Login", L"开机启动"));
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(behavior_menu), UiText(zh, L"Behavior", L"行为"));
 
   AppendMenuW(
       appearance_menu,
       MF_STRING | (settings_.popup.show_search ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleShowSearch,
-      L"Show Search");
+      UiText(zh, L"Show Search", L"显示搜索框"));
   AppendMenuW(
       appearance_menu,
       MF_STRING | (settings_.popup.show_preview ? MF_CHECKED : MF_UNCHECKED),
       kMenuTogglePreview,
-      L"Show Preview");
+      UiText(zh, L"Show Preview", L"显示预览区"));
   AppendMenuW(
       appearance_menu,
       MF_STRING | (settings_.popup.remember_last_position ? MF_CHECKED : MF_UNCHECKED),
       kMenuToggleRememberPosition,
-      L"Remember Position");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(appearance_menu), L"Appearance");
+      UiText(zh, L"Remember Position", L"记住窗口位置"));
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(appearance_menu), UiText(zh, L"Appearance", L"外观"));
 
   AppendMenuW(
       search_mode_menu,
       MF_STRING | (settings_.search_mode == SearchMode::kMixed ? MF_CHECKED : MF_UNCHECKED),
       kMenuSearchModeMixed,
-      L"Mixed");
+      SearchModeLabel(zh, SearchMode::kMixed));
   AppendMenuW(
       search_mode_menu,
       MF_STRING | (settings_.search_mode == SearchMode::kExact ? MF_CHECKED : MF_UNCHECKED),
       kMenuSearchModeExact,
-      L"Exact");
+      SearchModeLabel(zh, SearchMode::kExact));
   AppendMenuW(
       search_mode_menu,
       MF_STRING | (settings_.search_mode == SearchMode::kFuzzy ? MF_CHECKED : MF_UNCHECKED),
       kMenuSearchModeFuzzy,
-      L"Fuzzy");
+      SearchModeLabel(zh, SearchMode::kFuzzy));
   AppendMenuW(
       search_mode_menu,
       MF_STRING | (settings_.search_mode == SearchMode::kRegexp ? MF_CHECKED : MF_UNCHECKED),
       kMenuSearchModeRegexp,
-      L"Regexp");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(search_mode_menu), L"Search Mode");
+      SearchModeLabel(zh, SearchMode::kRegexp));
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(search_mode_menu), UiText(zh, L"Search Mode", L"搜索模式"));
 
   AppendMenuW(
       sort_menu,
       MF_STRING | (settings_.sort_order == HistorySortOrder::kLastCopied ? MF_CHECKED : MF_UNCHECKED),
       kMenuSortLastCopied,
-      L"Last Copied");
+      SortOrderLabel(zh, HistorySortOrder::kLastCopied));
   AppendMenuW(
       sort_menu,
       MF_STRING | (settings_.sort_order == HistorySortOrder::kFirstCopied ? MF_CHECKED : MF_UNCHECKED),
       kMenuSortFirstCopied,
-      L"First Copied");
+      SortOrderLabel(zh, HistorySortOrder::kFirstCopied));
   AppendMenuW(
       sort_menu,
       MF_STRING | (settings_.sort_order == HistorySortOrder::kCopyCount ? MF_CHECKED : MF_UNCHECKED),
       kMenuSortCopyCount,
-      L"Copy Count");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(sort_menu), L"Sort By");
+      SortOrderLabel(zh, HistorySortOrder::kCopyCount));
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(sort_menu), UiText(zh, L"Sort By", L"排序方式"));
 
   AppendMenuW(
       pin_menu,
       MF_STRING | (settings_.pin_position == PinPosition::kTop ? MF_CHECKED : MF_UNCHECKED),
       kMenuPinTop,
-      L"Pins on Top");
+      PinPositionLabel(zh, PinPosition::kTop));
   AppendMenuW(
       pin_menu,
       MF_STRING | (settings_.pin_position == PinPosition::kBottom ? MF_CHECKED : MF_UNCHECKED),
       kMenuPinBottom,
-      L"Pins on Bottom");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(pin_menu), L"Pins");
+      PinPositionLabel(zh, PinPosition::kBottom));
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(pin_menu), UiText(zh, L"Pins", L"置顶"));
 
   AppendMenuW(
       history_limit_menu,
@@ -1033,13 +1123,13 @@ void Win32App::ShowTrayMenu(const POINT* anchor) {
       MF_STRING | (settings_.max_history_items == 500 ? MF_CHECKED : MF_UNCHECKED),
       kMenuHistoryLimit500,
       L"500");
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(history_limit_menu), L"History Limit");
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(history_limit_menu), UiText(zh, L"History Limit", L"历史条数"));
 
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kMenuClearHistory, L"Clear History");
-  AppendMenuW(menu, MF_STRING, kMenuClearAllHistory, L"Clear All History");
+  AppendMenuW(menu, MF_STRING, kMenuClearHistory, UiText(zh, L"Clear History", L"清空历史"));
+  AppendMenuW(menu, MF_STRING, kMenuClearAllHistory, UiText(zh, L"Clear All History", L"清空全部历史"));
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kMenuExit, L"Exit");
+  AppendMenuW(menu, MF_STRING, kMenuExit, UiText(zh, L"Exit", L"退出"));
 
   POINT cursor = anchor != nullptr ? *anchor : POINT{};
   if ((cursor.x == 0 && cursor.y == 0) && GetCursorPos(&cursor) == FALSE) {
@@ -1221,7 +1311,7 @@ void Win32App::OpenSettingsWindow() {
   settings_window_ = CreateWindowExW(
       window_ex_style,
       kSettingsWindowClass,
-      L"Maccy Windows Settings",
+      UiText(use_chinese_ui_, L"Maccy Windows Settings", L"Maccy Windows 设置"),
       window_style,
       CW_USEDEFAULT,
       CW_USEDEFAULT,
@@ -1276,7 +1366,10 @@ bool Win32App::ApplySettingsWindowChanges() {
   if (!IsValidPopupHotKey(next_settings.popup_hotkey_modifiers, next_settings.popup_hotkey_virtual_key)) {
     ShowDialog(
         settings_window_,
-        L"Choose at least one modifier key and one trigger key for the global open hotkey.",
+        UiText(
+            use_chinese_ui_,
+            L"Choose at least one modifier key and one trigger key for the global open hotkey.",
+            L"请至少选择一个组合键修饰键，以及一个用于打开窗口的触发按键。"),
         MB_ICONWARNING);
     return false;
   }
@@ -1314,7 +1407,10 @@ bool Win32App::ApplySettingsWindowChanges() {
   if (next_settings.start_on_login != settings_.start_on_login && !win32::SetStartOnLogin(next_settings.start_on_login)) {
     ShowDialog(
         settings_window_,
-        L"Couldn't update the Start on Login setting. Check your Windows startup permissions and try again.",
+        UiText(
+            use_chinese_ui_,
+            L"Couldn't update the Start on Login setting. Check your Windows startup permissions and try again.",
+            L"无法更新“开机启动”设置。请检查 Windows 启动权限后重试。"),
         MB_ICONERROR);
     return false;
   }
@@ -1327,10 +1423,17 @@ bool Win32App::ApplySettingsWindowChanges() {
     (void)RegisterToggleHotKey();
 
     const std::wstring hotkey_text =
-        FormatPopupHotKey(previous_settings.popup_hotkey_modifiers, previous_settings.popup_hotkey_virtual_key);
+        FormatPopupHotKey(
+            use_chinese_ui_,
+            previous_settings.popup_hotkey_modifiers,
+            previous_settings.popup_hotkey_virtual_key);
     const std::wstring warning =
-        std::wstring(L"Couldn't register the selected open hotkey. The previous hotkey ") + hotkey_text +
-        L" has been restored.";
+        std::wstring(
+            UiText(
+                use_chinese_ui_,
+                L"Couldn't register the selected open hotkey. The previous hotkey ",
+                L"无法注册你选择的打开快捷键。已恢复之前的快捷键 ")) +
+        hotkey_text + UiText(use_chinese_ui_, L" has been restored.", L"。");
     ShowDialog(settings_window_, warning, MB_ICONERROR);
     SyncSettingsWindowControls();
     return false;
@@ -1464,10 +1567,18 @@ void Win32App::ShowStartupGuide() {
   }
 
   const std::wstring hotkey_text =
-      FormatPopupHotKey(settings_.popup_hotkey_modifiers, settings_.popup_hotkey_virtual_key);
+      FormatPopupHotKey(use_chinese_ui_, settings_.popup_hotkey_modifiers, settings_.popup_hotkey_virtual_key);
   const std::wstring message =
-      std::wstring(L"Maccy Windows is running in the notification area.\n\nPress ") + hotkey_text +
-      L" or click the tray icon to open clipboard history.";
+      std::wstring(
+          UiText(
+              use_chinese_ui_,
+              L"Maccy Windows is running in the notification area.\n\nPress ",
+              L"Maccy Windows 正在通知区域运行。\n\n按下 ")) +
+      hotkey_text +
+      UiText(
+          use_chinese_ui_,
+          L" or click the tray icon to open clipboard history.",
+          L"，或点击托盘图标打开剪贴板历史记录。");
   ShowDialog(
       controller_window_,
       message,
@@ -1587,7 +1698,11 @@ void Win32App::RefreshPopupList() {
   visible_item_ids_.clear();
 
   if (store_.items().empty()) {
-    SendMessageW(list_box_, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Clipboard history is empty."));
+    SendMessageW(
+        list_box_,
+        LB_ADDSTRING,
+        0,
+        reinterpret_cast<LPARAM>(UiText(use_chinese_ui_, L"Clipboard history is empty.", L"剪贴板历史为空。")));
     SendMessageW(list_box_, LB_SETCURSEL, 0, 0);
     UpdatePreview();
     return;
@@ -1595,7 +1710,11 @@ void Win32App::RefreshPopupList() {
 
   const auto results = Search(settings_.search_mode, search_query_, store_.items());
   if (results.empty()) {
-    SendMessageW(list_box_, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"No matches."));
+    SendMessageW(
+        list_box_,
+        LB_ADDSTRING,
+        0,
+        reinterpret_cast<LPARAM>(UiText(use_chinese_ui_, L"No matches.", L"没有匹配结果。")));
     SendMessageW(list_box_, LB_SETCURSEL, 0, 0);
     UpdatePreview();
     return;
@@ -1623,17 +1742,21 @@ void Win32App::UpdatePreview() {
 
   const auto item_id = SelectedVisibleItemId();
   if (item_id == 0) {
-    SetWindowTextW(preview_edit_, L"Select a clipboard item to preview it.");
+    SetWindowTextW(
+        preview_edit_,
+        UiText(use_chinese_ui_, L"Select a clipboard item to preview it.", L"请选择一条剪贴板记录进行预览。"));
     return;
   }
 
   const auto* item = store_.FindById(item_id);
   if (item == nullptr) {
-    SetWindowTextW(preview_edit_, L"Select a clipboard item to preview it.");
+    SetWindowTextW(
+        preview_edit_,
+        UiText(use_chinese_ui_, L"Select a clipboard item to preview it.", L"请选择一条剪贴板记录进行预览。"));
     return;
   }
 
-  const auto preview_text = win32::Utf8ToWide(BuildPreviewText(*item));
+  const auto preview_text = BuildPreviewText(use_chinese_ui_, *item);
   SetWindowTextW(preview_edit_, preview_text.c_str());
 }
 
@@ -1647,7 +1770,7 @@ void Win32App::UpdateTrayIcon() {
   icon.hWnd = controller_window_;
   icon.uID = kTrayIconId;
   icon.uFlags = NIF_TIP;
-  const auto tooltip = BuildTrayTooltip(capture_enabled_, store_);
+  const auto tooltip = BuildTrayTooltip(use_chinese_ui_, capture_enabled_, store_);
   lstrcpynW(icon.szTip, tooltip.c_str(), ARRAYSIZE(icon.szTip));
   Shell_NotifyIconW(NIM_MODIFY, &icon);
 }
@@ -1726,7 +1849,7 @@ void Win32App::DrawPopupListItem(const DRAWITEMSTRUCT& draw_item) {
     if (item != nullptr) {
       const std::wstring number_prefix =
           draw_item.itemID < 9 ? (std::to_wstring(draw_item.itemID + 1) + L". ") : L"";
-      const std::wstring pin_prefix = item->pinned ? L"[PIN] " : L"";
+      const std::wstring pin_prefix = item->pinned ? std::wstring(UiText(use_chinese_ui_, L"[PIN] ", L"[置顶] ")) : L"";
       const std::string title_utf8 = item->PreferredDisplayText();
       const std::wstring title_wide = win32::Utf8ToWide(title_utf8);
       const auto highlight_spans = ToWideHighlightSpans(
@@ -1876,7 +1999,8 @@ void Win32App::OpenPinEditor(bool rename_only) {
     pin_editor_window_ = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_DLGMODALFRAME,
         kPinEditorWindowClass,
-        rename_only ? L"Rename Pinned Item" : L"Edit Pinned Text",
+        rename_only ? UiText(use_chinese_ui_, L"Rename Pinned Item", L"重命名置顶项")
+                    : UiText(use_chinese_ui_, L"Edit Pinned Text", L"编辑置顶文本"),
         WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -1890,7 +2014,10 @@ void Win32App::OpenPinEditor(bool rename_only) {
       return;
     }
   } else {
-    SetWindowTextW(pin_editor_window_, rename_only ? L"Rename Pinned Item" : L"Edit Pinned Text");
+    SetWindowTextW(
+        pin_editor_window_,
+        rename_only ? UiText(use_chinese_ui_, L"Rename Pinned Item", L"重命名置顶项")
+                    : UiText(use_chinese_ui_, L"Edit Pinned Text", L"编辑置顶文本"));
     SetWindowPos(
         pin_editor_window_,
         nullptr,
@@ -2396,6 +2523,7 @@ LRESULT Win32App::HandleSearchEditMessage(HWND window, UINT message, WPARAM wpar
 LRESULT Win32App::HandlePinEditorMessage(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
   switch (message) {
     case WM_CREATE: {
+      const bool zh = use_chinese_ui_;
       const HFONT default_font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
 
       pin_editor_edit_ = CreateWindowExW(
@@ -2415,7 +2543,7 @@ LRESULT Win32App::HandlePinEditorMessage(HWND window, UINT message, WPARAM wpara
       HWND save_button = CreateWindowExW(
           0,
           L"BUTTON",
-          L"Save",
+          UiText(zh, L"Save", L"保存"),
           WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
           0,
           0,
@@ -2429,7 +2557,7 @@ LRESULT Win32App::HandlePinEditorMessage(HWND window, UINT message, WPARAM wpara
       HWND cancel_button = CreateWindowExW(
           0,
           L"BUTTON",
-          L"Cancel",
+          UiText(zh, L"Cancel", L"取消"),
           WS_CHILD | WS_VISIBLE | WS_TABSTOP,
           0,
           0,
@@ -2485,6 +2613,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
   switch (message) {
     case WM_CREATE: {
       settings_window_ = window;
+      const bool zh = use_chinese_ui_;
 
       const HFONT default_font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
       const auto apply_font = [default_font](HWND control) {
@@ -2624,7 +2753,13 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           nullptr);
       apply_font(settings_tab_);
 
-      const wchar_t* tab_titles[] = {L"General", L"Storage", L"Appearance", L"Pins", L"Ignore", L"Advanced"};
+      const wchar_t* tab_titles[] = {
+          UiText(zh, L"General", L"常规"),
+          UiText(zh, L"Storage", L"存储"),
+          UiText(zh, L"Appearance", L"外观"),
+          UiText(zh, L"Pins", L"置顶"),
+          UiText(zh, L"Ignore", L"忽略"),
+          UiText(zh, L"Advanced", L"高级")};
       for (int index = 0; index < static_cast<int>(sizeof(tab_titles) / sizeof(tab_titles[0])); ++index) {
         TCITEMW item{};
         item.mask = TCIF_TEXT;
@@ -2648,14 +2783,14 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       const int page_padding = 12;
       const int content_width = page_width - page_padding * 2;
 
-      create_group(settings_general_page_, page_padding, 12, content_width, 118, L"Open");
+      create_group(settings_general_page_, page_padding, 12, content_width, 118, UiText(zh, L"Open", L"打开方式"));
       create_label(
           settings_general_page_,
           page_padding + 16,
           36,
           content_width - 32,
           18,
-          L"Choose the global hotkey used to open the clipboard history popup.");
+          UiText(zh, L"Choose the global hotkey used to open the clipboard history popup.", L"选择用于打开剪贴板历史弹窗的全局快捷键。"));
       create_checkbox(settings_general_page_, settings_hotkey_ctrl_check_, page_padding + 16, 60, 70, L"Ctrl");
       create_checkbox(settings_general_page_, settings_hotkey_alt_check_, page_padding + 92, 60, 60, L"Alt");
       create_checkbox(settings_general_page_, settings_hotkey_shift_check_, page_padding + 158, 60, 72, L"Shift");
@@ -2667,9 +2802,9 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           88,
           content_width - 32,
           18,
-          L"The previous hotkey is restored automatically if the new one can't be registered.");
+          UiText(zh, L"The previous hotkey is restored automatically if the new one can't be registered.", L"如果新的快捷键无法注册，程序会自动恢复之前的快捷键。"));
 
-      create_group(settings_general_page_, page_padding, 142, content_width, 172, L"Behavior");
+      create_group(settings_general_page_, page_padding, 142, content_width, 172, UiText(zh, L"Behavior", L"行为"));
       int general_y = 166;
       create_checkbox(
           settings_general_page_,
@@ -2677,7 +2812,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           general_y,
           content_width - 32,
-          L"Enable clipboard capture");
+          UiText(zh, L"Enable clipboard capture", L"启用剪贴板捕获"));
       general_y += 24;
       create_checkbox(
           settings_general_page_,
@@ -2685,7 +2820,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           general_y,
           content_width - 32,
-          L"Auto paste after selection");
+          UiText(zh, L"Auto paste after selection", L"选择后自动粘贴"));
       general_y += 24;
       create_checkbox(
           settings_general_page_,
@@ -2693,7 +2828,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           general_y,
           content_width - 32,
-          L"Paste as plain text");
+          UiText(zh, L"Paste as plain text", L"粘贴为纯文本"));
       general_y += 24;
       create_checkbox(
           settings_general_page_,
@@ -2701,7 +2836,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           general_y,
           content_width - 32,
-          L"Start on login");
+          UiText(zh, L"Start on login", L"开机启动"));
       general_y += 24;
       create_checkbox(
           settings_general_page_,
@@ -2709,10 +2844,10 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           general_y,
           content_width - 32,
-          L"Show startup guide");
+          UiText(zh, L"Show startup guide", L"显示启动引导"));
 
-      create_group(settings_general_page_, page_padding, 326, content_width, 90, L"Search");
-      create_label(settings_general_page_, page_padding + 16, 352, 110, 18, L"Search mode");
+      create_group(settings_general_page_, page_padding, 326, content_width, 90, UiText(zh, L"Search", L"搜索"));
+      create_label(settings_general_page_, page_padding + 16, 352, 110, 18, UiText(zh, L"Search mode", L"搜索模式"));
       create_combo(settings_general_page_, settings_search_mode_combo_, page_padding + 132, 348, 180);
       create_label(
           settings_general_page_,
@@ -2720,15 +2855,15 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           380,
           content_width - 32,
           18,
-          L"Matches the source project's exact, fuzzy, regexp, and mixed search modes.");
+          UiText(zh, L"Matches the source project's exact, fuzzy, regexp, and mixed search modes.", L"对应源项目中的精确、模糊、正则和混合搜索模式。"));
 
-      create_group(settings_storage_page_, page_padding, 12, content_width, 126, L"History");
-      create_label(settings_storage_page_, page_padding + 16, 40, 110, 18, L"History limit");
+      create_group(settings_storage_page_, page_padding, 12, content_width, 126, UiText(zh, L"History", L"历史记录"));
+      create_label(settings_storage_page_, page_padding + 16, 40, 110, 18, UiText(zh, L"History limit", L"历史条数"));
       create_combo(settings_storage_page_, settings_history_limit_combo_, page_padding + 132, 36, 180);
-      create_label(settings_storage_page_, page_padding + 16, 72, 110, 18, L"Sort order");
+      create_label(settings_storage_page_, page_padding + 16, 72, 110, 18, UiText(zh, L"Sort order", L"排序方式"));
       create_combo(settings_storage_page_, settings_sort_order_combo_, page_padding + 132, 68, 180);
 
-      create_group(settings_storage_page_, page_padding, 150, content_width, 174, L"Saved content types");
+      create_group(settings_storage_page_, page_padding, 150, content_width, 174, UiText(zh, L"Saved content types", L"保存的内容类型"));
       int storage_y = 176;
       create_checkbox(
           settings_storage_page_,
@@ -2736,7 +2871,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           storage_y,
           content_width - 32,
-          L"Save plain text");
+          UiText(zh, L"Save plain text", L"保存纯文本"));
       storage_y += 24;
       create_checkbox(
           settings_storage_page_,
@@ -2744,7 +2879,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           storage_y,
           content_width - 32,
-          L"Save HTML");
+          UiText(zh, L"Save HTML", L"保存 HTML"));
       storage_y += 24;
       create_checkbox(
           settings_storage_page_,
@@ -2752,7 +2887,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           storage_y,
           content_width - 32,
-          L"Save rich text");
+          UiText(zh, L"Save rich text", L"保存富文本"));
       storage_y += 24;
       create_checkbox(
           settings_storage_page_,
@@ -2760,7 +2895,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           storage_y,
           content_width - 32,
-          L"Save images");
+          UiText(zh, L"Save images", L"保存图像"));
       storage_y += 24;
       create_checkbox(
           settings_storage_page_,
@@ -2768,9 +2903,9 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           storage_y,
           content_width - 32,
-          L"Save file lists");
+          UiText(zh, L"Save file lists", L"保存文件列表"));
 
-      create_group(settings_appearance_page_, page_padding, 12, content_width, 118, L"Popup");
+      create_group(settings_appearance_page_, page_padding, 12, content_width, 118, UiText(zh, L"Popup", L"弹窗"));
       int appearance_y = 38;
       create_checkbox(
           settings_appearance_page_,
@@ -2778,7 +2913,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           appearance_y,
           content_width - 32,
-          L"Show search field");
+          UiText(zh, L"Show search field", L"显示搜索框"));
       appearance_y += 24;
       create_checkbox(
           settings_appearance_page_,
@@ -2786,7 +2921,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           appearance_y,
           content_width - 32,
-          L"Show preview pane");
+          UiText(zh, L"Show preview pane", L"显示预览区"));
       appearance_y += 24;
       create_checkbox(
           settings_appearance_page_,
@@ -2794,44 +2929,44 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           page_padding + 16,
           appearance_y,
           content_width - 32,
-          L"Remember popup position");
+          UiText(zh, L"Remember popup position", L"记住弹窗位置"));
 
-      create_group(settings_appearance_page_, page_padding, 142, content_width, 86, L"Pins");
-      create_label(settings_appearance_page_, page_padding + 16, 170, 110, 18, L"Pin position");
+      create_group(settings_appearance_page_, page_padding, 142, content_width, 86, UiText(zh, L"Pins", L"置顶"));
+      create_label(settings_appearance_page_, page_padding + 16, 170, 110, 18, UiText(zh, L"Pin position", L"置顶位置"));
       create_combo(settings_appearance_page_, settings_pin_position_combo_, page_padding + 132, 166, 180);
 
-      create_group(settings_pins_page_, page_padding, 12, content_width, 170, L"Pinned items");
+      create_group(settings_pins_page_, page_padding, 12, content_width, 170, UiText(zh, L"Pinned items", L"置顶项目"));
       create_label(
           settings_pins_page_,
           page_padding + 16,
           40,
           content_width - 32,
           20,
-          L"Windows pin management is available directly from the history popup.");
-      create_label(settings_pins_page_, page_padding + 16, 74, content_width - 32, 18, L"Use Ctrl+P to pin or unpin the selected item.");
-      create_label(settings_pins_page_, page_padding + 16, 98, content_width - 32, 18, L"Use Ctrl+R to rename a pinned item.");
-      create_label(settings_pins_page_, page_padding + 16, 122, content_width - 32, 18, L"Use Ctrl+E to edit pinned plain text.");
+          UiText(zh, L"Windows pin management is available directly from the history popup.", L"Windows 版的置顶管理可直接在历史弹窗中完成。"));
+      create_label(settings_pins_page_, page_padding + 16, 74, content_width - 32, 18, UiText(zh, L"Use Ctrl+P to pin or unpin the selected item.", L"按 Ctrl+P 可置顶或取消置顶当前选中项。"));
+      create_label(settings_pins_page_, page_padding + 16, 98, content_width - 32, 18, UiText(zh, L"Use Ctrl+R to rename a pinned item.", L"按 Ctrl+R 可重命名置顶项。"));
+      create_label(settings_pins_page_, page_padding + 16, 122, content_width - 32, 18, UiText(zh, L"Use Ctrl+E to edit pinned plain text.", L"按 Ctrl+E 可编辑置顶的纯文本内容。"));
 
-      create_group(settings_ignore_page_, page_padding, 12, content_width, 84, L"Ignore behavior");
+      create_group(settings_ignore_page_, page_padding, 12, content_width, 84, UiText(zh, L"Ignore behavior", L"忽略行为"));
       create_checkbox(
           settings_ignore_page_,
           settings_ignore_all_check_,
           page_padding + 16,
           38,
           content_width - 32,
-          L"Ignore all clipboard captures");
+          UiText(zh, L"Ignore all clipboard captures", L"忽略所有剪贴板捕获"));
       create_checkbox(
           settings_ignore_page_,
           settings_only_listed_apps_check_,
           page_padding + 16,
           62,
           content_width - 32,
-          L"Only capture applications listed in the allowed applications box");
+          UiText(zh, L"Only capture applications listed in the allowed applications box", L"仅捕获“允许的应用程序”列表中列出的应用"));
 
       const int ignore_column_gap = 12;
       const int ignore_column_width = (content_width - ignore_column_gap) / 2;
       const int ignore_edit_height = 132;
-      create_group(settings_ignore_page_, page_padding, 108, content_width, page_height - 120, L"Rules");
+      create_group(settings_ignore_page_, page_padding, 108, content_width, page_height - 120, UiText(zh, L"Rules", L"规则"));
 
       create_label(
           settings_ignore_page_,
@@ -2839,7 +2974,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           134,
           ignore_column_width - 8,
           18,
-          L"Ignored applications");
+          UiText(zh, L"Ignored applications", L"忽略的应用程序"));
       create_multiline_edit(
           settings_ignore_page_,
           settings_ignored_apps_edit_,
@@ -2854,7 +2989,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           134,
           ignore_column_width - 8,
           18,
-          L"Allowed applications");
+          UiText(zh, L"Allowed applications", L"允许的应用程序"));
       create_multiline_edit(
           settings_ignore_page_,
           settings_allowed_apps_edit_,
@@ -2869,7 +3004,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           300,
           ignore_column_width - 8,
           18,
-          L"Ignored text patterns");
+          UiText(zh, L"Ignored text patterns", L"忽略的文本模式"));
       create_multiline_edit(
           settings_ignore_page_,
           settings_ignored_patterns_edit_,
@@ -2884,7 +3019,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           300,
           ignore_column_width - 8,
           18,
-          L"Ignored content formats");
+          UiText(zh, L"Ignored content formats", L"忽略的内容格式"));
       create_multiline_edit(
           settings_ignore_page_,
           settings_ignored_formats_edit_,
@@ -2893,50 +3028,50 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
           ignore_column_width - 8,
           ignore_edit_height);
 
-      create_group(settings_advanced_page_, page_padding, 12, content_width, 92, L"Advanced");
+      create_group(settings_advanced_page_, page_padding, 12, content_width, 92, UiText(zh, L"Advanced", L"高级"));
       create_checkbox(
           settings_advanced_page_,
           settings_clear_history_on_exit_check_,
           page_padding + 16,
           38,
           content_width - 32,
-          L"Clear unpinned history when the app exits");
+          UiText(zh, L"Clear unpinned history when the app exits", L"应用退出时清除未置顶历史记录"));
       create_checkbox(
           settings_advanced_page_,
           settings_clear_clipboard_on_exit_check_,
           page_padding + 16,
           62,
           content_width - 32,
-          L"Clear the Windows clipboard when the app exits");
+          UiText(zh, L"Clear the Windows clipboard when the app exits", L"应用退出时清空 Windows 剪贴板"));
 
-      create_group(settings_advanced_page_, page_padding, 118, content_width, 110, L"Notes");
+      create_group(settings_advanced_page_, page_padding, 118, content_width, 110, UiText(zh, L"Notes", L"说明"));
       create_label(
           settings_advanced_page_,
           page_padding + 16,
           146,
           content_width - 32,
           20,
-          L"These options match the source project's advanced housekeeping behavior.");
+          UiText(zh, L"These options match the source project's advanced housekeeping behavior.", L"这些选项对应源项目中的高级清理行为。"));
       create_label(
           settings_advanced_page_,
           page_padding + 16,
           170,
           content_width - 32,
           36,
-          L"History clearing keeps pinned items. Clipboard clearing removes the current clipboard contents on shutdown.");
+          UiText(zh, L"History clearing keeps pinned items. Clipboard clearing removes the current clipboard contents on shutdown.", L"清理历史记录时会保留置顶项。清空剪贴板会在退出时移除当前系统剪贴板内容。"));
 
       for (const auto& choice : kPopupHotKeyChoices) {
-        AddComboItem(settings_hotkey_key_combo_, choice.label);
+        AddComboItem(settings_hotkey_key_combo_, PopupHotKeyLabel(zh, choice.virtual_key));
       }
-      AddComboItem(settings_search_mode_combo_, L"Mixed");
-      AddComboItem(settings_search_mode_combo_, L"Exact");
-      AddComboItem(settings_search_mode_combo_, L"Fuzzy");
-      AddComboItem(settings_search_mode_combo_, L"Regexp");
-      AddComboItem(settings_sort_order_combo_, L"Last Copied");
-      AddComboItem(settings_sort_order_combo_, L"First Copied");
-      AddComboItem(settings_sort_order_combo_, L"Copy Count");
-      AddComboItem(settings_pin_position_combo_, L"Pins on Top");
-      AddComboItem(settings_pin_position_combo_, L"Pins on Bottom");
+      AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kMixed));
+      AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kExact));
+      AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kFuzzy));
+      AddComboItem(settings_search_mode_combo_, SearchModeLabel(zh, SearchMode::kRegexp));
+      AddComboItem(settings_sort_order_combo_, SortOrderLabel(zh, HistorySortOrder::kLastCopied));
+      AddComboItem(settings_sort_order_combo_, SortOrderLabel(zh, HistorySortOrder::kFirstCopied));
+      AddComboItem(settings_sort_order_combo_, SortOrderLabel(zh, HistorySortOrder::kCopyCount));
+      AddComboItem(settings_pin_position_combo_, PinPositionLabel(zh, PinPosition::kTop));
+      AddComboItem(settings_pin_position_combo_, PinPositionLabel(zh, PinPosition::kBottom));
       AddComboItem(settings_history_limit_combo_, L"50");
       AddComboItem(settings_history_limit_combo_, L"100");
       AddComboItem(settings_history_limit_combo_, L"200");
@@ -2945,7 +3080,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       HWND save_button = CreateWindowExW(
           0,
           L"BUTTON",
-          L"Save",
+          UiText(zh, L"Save", L"保存"),
           WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
           save_x,
           button_y,
@@ -2960,7 +3095,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       HWND apply_button = CreateWindowExW(
           0,
           L"BUTTON",
-          L"Apply",
+          UiText(zh, L"Apply", L"应用"),
           WS_CHILD | WS_VISIBLE | WS_TABSTOP,
           apply_x,
           button_y,
@@ -2975,7 +3110,7 @@ LRESULT Win32App::HandleSettingsWindowMessage(HWND window, UINT message, WPARAM 
       HWND close_button = CreateWindowExW(
           0,
           L"BUTTON",
-          L"Close",
+          UiText(zh, L"Close", L"关闭"),
           WS_CHILD | WS_VISIBLE | WS_TABSTOP,
           close_x,
           button_y,
