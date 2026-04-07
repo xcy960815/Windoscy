@@ -14,6 +14,8 @@
 #include "core/history_store.h"
 #include "core/search.h"
 
+namespace maccy {
+
 /**
  * @brief 忽略规则结构体
  * @details 定义了哪些应用程序、格式和内容模式应该被忽略
