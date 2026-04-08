@@ -500,14 +500,6 @@ std::wstring BuildPreviewText(bool use_chinese_ui, const HistoryItem& item) {
 }
 
 /**
- * @brief 宽字符高亮区间结构体
- */
-struct WideHighlightSpan {
-  int start = 0;   /**< 起始位置 */
-  int length = 0; /**< 长度 */
-};
-
-/**
  * @brief 将 UTF-8 高亮区间转换为宽字符区间
  * @param utf8_text UTF-8 编码的文本
  * @param spans UTF-8 高亮区间列表
@@ -529,7 +521,7 @@ std::vector<WideHighlightSpan> ToWideHighlightSpans(
     const int wide_length = static_cast<int>(
         win32::Utf8ToWide(utf8_text.substr(span.start, clamped_length)).size());
     if (wide_length > 0) {
-      wide_spans.push_back({wide_start, wide_length});
+      wide_spans.push_back(WideHighlightSpan{wide_start, wide_length});
     }
   }
 
