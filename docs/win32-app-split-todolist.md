@@ -17,6 +17,14 @@
 - 不改变对外接口（`Win32App` 头文件尽量稳定）
 - 每个阶段都保持可编译、可回归、可回滚
 
+## 当前进度（2026-04-08）
+
+- [x] 新增 `src/app/win32_app_internal.h/.cpp` 承载共享 helper 与内部常量
+- [x] 新增 `win32_app_lifecycle_tray.cpp` / `win32_app_popup_input.cpp` / `win32_app_message_handlers.cpp` / `win32_app_settings.cpp` / `win32_app_window_procs.cpp`
+- [x] 已将原有 `.inc` 内容全部并入对应 `.cpp`，并删除所有 `.inc` 文件
+- [x] 主文件 `src/app/win32_app.cpp` 收敛为入口与少量核心逻辑
+- [ ] 下一步继续把模块边界从“职责拆分”推进到“语义拆分”，例如把 `popup`、`pin editor`、`tray`、`input` 再拆成更细的 `.cpp`
+
 ## 目标目录结构（拆分后）
 
 - `src/app/win32_app.cpp`（入口与主循环、最小编排）
@@ -143,4 +151,3 @@
 - 每个阶段独立提交，不做超大“总提交”
 - 每阶段都先迁移、再编译、再回归、再提交
 - 遇到行为风险优先“保留旧路径 + 新路径开关”过渡
-

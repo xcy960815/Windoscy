@@ -22,6 +22,12 @@ if(WIN32)
     app/main_win32.cpp
     app/resources/maccy.rc
     app/win32_app.cpp
+    app/win32_app_internal.cpp
+    app/win32_app_lifecycle_tray.cpp
+    app/win32_app_popup_input.cpp
+    app/win32_app_message_handlers.cpp
+    app/win32_app_settings.cpp
+    app/win32_app_window_procs.cpp
     platform/win32/clipboard.cpp
     platform/win32/input.cpp
     platform/win32/source_app.cpp
